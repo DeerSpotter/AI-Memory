@@ -67,17 +67,17 @@ jobs:
           fi
 
           if [ -z "$PROJECT_PATH" ]; then
-            {
-              echo "# IPA build audit"
-              echo
-              echo "Status: not buildable yet"
-              echo
-              echo "No .xcodeproj or .xcworkspace was found in this repository."
-              echo
-              echo "To build an IPA, commit the actual Xcode source project, then rerun this workflow."
-              echo
-              echo "Minimum iOS deployment target configured by this workflow: ${{ github.event.inputs.deployment_target || '16.0' }}"
-            } > ipa-build-audit.md
+            printf '%s\n' \
+              '# IPA build audit' \
+              '' \
+              'Status: not buildable yet' \
+              '' \
+              'No .xcodeproj or .xcworkspace was found in this repository.' \
+              '' \
+              'To build an IPA, commit the actual Xcode source project, then rerun this workflow.' \
+              '' \
+              "Minimum iOS deployment target configured by this workflow: ${{ github.event.inputs.deployment_target || '16.0' }}" \
+              > ipa-build-audit.md
 
             echo "can_build=false" >> "$GITHUB_OUTPUT"
             echo "No .xcodeproj or .xcworkspace found. Marking this run as an audit result instead of a build failure."
@@ -96,18 +96,7 @@ jobs:
             SCHEME="$SCHEME_INPUT"
           else
             xcodebuild -list "$BUILD_FLAG" "$PROJECT_PATH" -json > /tmp/xcode-list.json
-            SCHEME="$(python3 - <<'PY'
-import json
-with open('/tmp/xcode-list.json', 'r', encoding='utf-8') as f:
-    data = json.load(f)
-for key in ('workspace', 'project'):
-    schemes = data.get(key, {}).get('schemes', [])
-    if schemes:
-        print(schemes[0])
-        raise SystemExit(0)
-raise SystemExit(1)
-PY
-)"
+            SCHEME="$(python3 -c 'import json, sys; data=json.load(open("/tmp/xcode-list.json", encoding="utf-8")); schemes=[]; [schemes.extend(data.get(k, {}).get("schemes", [])) for k in ("workspace", "project")]; print(schemes[0]) if schemes else sys.exit(1)')"
           fi
 
           if [ -z "$SCHEME" ]; then
