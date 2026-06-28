@@ -7,6 +7,8 @@ Make the iOS app talk to a user supplied Supabase memory backend.
 Phase 2A adds a source controlled SwiftUI app with:
 
 - trusted ChatGPT WebView tab
+- ChatGPT tab Save Context overlay
+- ChatGPT tab refresh overlay
 - always available Setup tab for assisted BYO configuration
 - bring your own Supabase setup screen
 - Supabase Auth screen
@@ -40,6 +42,7 @@ This phase proves that the app can authenticate to Supabase, call the JWT protec
 - It does not replace ChatGPT with an OpenAI API based chat shell.
 - It does not let ChatGPT web automatically read Supabase memory.
 - It does not inject JavaScript into `chatgpt.com`.
+- It does not scrape the ChatGPT page or automatically read the full visible conversation.
 - It does not include any Supabase secret or service role key.
 - It does not reuse ChatGPT connector authentication tokens. Those belong to the ChatGPT platform session and are not exposed to the external IPA.
 - It does not hardcode the developer's Supabase project as the backend for all users.
@@ -76,6 +79,29 @@ User opens Setup tab
   -> app calls /functions/v1/memory with Authorization: Bearer <user JWT>
   -> Supabase RLS scopes rows to owner_id inside that user's project
 ```
+
+## ChatGPT tab quick actions
+
+The ChatGPT tab has small overlay controls above the WebView:
+
+```text
+Save Context icon
+  -> opens quick save sheet
+  -> user types or pastes important ChatGPT context
+  -> app saves it into the selected Supabase memory project
+
+Refresh icon
+  -> reloads the current ChatGPT WebView session
+```
+
+The Save Context button is intentionally outside the ChatGPT web page. It should not inject JavaScript, scrape the DOM, read cookies, or silently copy page contents. Fully automatic capture of the active conversation belongs in a future OpenAI API based chat tab where the app owns the chat messages.
+
+Current safe capture path:
+
+1. copy important text from ChatGPT or type a short summary
+2. tap Save Context
+3. paste or enter the context
+4. save it to the selected memory project
 
 ## Memory tab layout
 
