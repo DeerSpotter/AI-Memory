@@ -11,6 +11,9 @@ struct ChatGPTWebViewApp: App {
                 .task {
                     await appModel.restoreSession()
                 }
+                .onOpenURL { url in
+                    appModel.handleOpenURL(url)
+                }
         }
     }
 }
