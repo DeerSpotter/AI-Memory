@@ -24,13 +24,17 @@ on:
         description: "Xcode build configuration"
         required: false
         default: "Release"
+      deployment_target:
+        description: "Minimum iOS deployment target"
+        required: false
+        default: "16.0"
 
 permissions:
   contents: read
 
 jobs:
   build-unsigned-ipa:
-    name: Build unsigned IPA
+    name: Build unsigned IPA for iOS 16
     runs-on: macos-latest
 
     steps:
@@ -48,8 +52,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          PROJECT_INPUT="${{ github.event.inputs.project_path }}"
-          SCHEME_INPUT="${{ github.event.inputs.scheme }}"
+          PROJECT_INPUT="${{ github.event.inputs.project_path || '' }}"
+          SCHEME_INPUT="${{ github.event.inputs.scheme || '' }}"
 
           if [ -n "$PROJECT_INPUT" ]; then
             PROJECT_PATH="$PROJECT_INPUT"
@@ -107,12 +111,19 @@ PY
           set -euo pipefail
           mkdir -p build
 
+          DEPLOYMENT_TARGET="${{ github.event.inputs.deployment_target || '16.0' }}"
+          CONFIGURATION="${{ github.event.inputs.configuration || 'Release' }}"
+
+          echo "Building configuration: $CONFIGURATION"
+          echo "Minimum iOS deployment target: $DEPLOYMENT_TARGET"
+
           xcodebuild clean archive \
             "${{ steps.detect.outputs.build_flag }}" "${{ steps.detect.outputs.project_path }}" \
             -scheme "${{ steps.detect.outputs.scheme }}" \
-            -configuration "${{ github.event.inputs.configuration || 'Release' }}" \
+            -configuration "$CONFIGURATION" \
             -sdk iphoneos \
             -archivePath "$PWD/build/App.xcarchive" \
+            IPHONEOS_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -133,13 +144,13 @@ PY
           rm -rf build/Payload
           mkdir -p build/Payload
           cp -R "$APP_PATH" build/Payload/
-          (cd build && zip -qry ChatGPT-WebView-unsigned.ipa Payload)
-          ls -lh build/ChatGPT-WebView-unsigned.ipa
+          (cd build && zip -qry ChatGPT-WebView-ios16-unsigned.ipa Payload)
+          ls -lh build/ChatGPT-WebView-ios16-unsigned.ipa
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ChatGPT-WebView-unsigned-ipa
-          path: build/ChatGPT-WebView-unsigned.ipa
+          name: ChatGPT-WebView-ios16-unsigned-ipa
+          path: build/ChatGPT-WebView-ios16-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
