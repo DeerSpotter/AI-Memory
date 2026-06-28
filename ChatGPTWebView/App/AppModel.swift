@@ -405,7 +405,7 @@ final class AppModel: ObservableObject {
 
     private func parseLineSeparatedList(_ text: String) -> [String] {
         text
-            .split(whereSeparator: \ .isNewline)
+            .split(whereSeparator: { $0.isNewline })
             .map { line in
                 line
                     .trimmingCharacters(in: .whitespacesAndNewlines)
