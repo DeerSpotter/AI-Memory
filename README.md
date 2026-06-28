@@ -27,6 +27,7 @@ Start here:
 
 - [Project goals](docs/PROJECT_GOALS.md)
 - [Phase 1 Supabase memory plan](docs/PHASE_1_SUPABASE_MEMORY.md)
+- [Phase 1 deployment status](docs/PHASE_1_DEPLOYMENT_STATUS.md)
 - [Memory schema migration](supabase/migrations/20260628160000_create_memory_schema.sql)
 - [Memory Edge Function](supabase/functions/memory/index.ts)
 - [Swift memory client stub](AppMemory/SupabaseMemoryClient.swift)
