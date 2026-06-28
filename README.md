@@ -22,6 +22,7 @@ The upstream release IPA should not be treated as trusted unless that exact IPA 
 - Supabase Auth test flow
 - Supabase memory dashboard
 - Supabase memory save/search management UI
+- Temporary repo context pack generator while MCP memory is built
 - Copy context for ChatGPT workflow
 - TrollStore compatibility
 - Manual or Xcode install
@@ -45,6 +46,7 @@ Start here:
 - [Phase 1 deployment status](docs/PHASE_1_DEPLOYMENT_STATUS.md)
 - [Phase 2A memory UI](docs/PHASE_2A_MEMORY_UI.md)
 - [Saved memory direction context](docs/SAVED_CONTEXT_MEMORY_DIRECTION.md)
+- [Context pack guide](docs/CONTEXT_PACK_GUIDE.md)
 - [Copy context for ChatGPT](docs/COPY_CONTEXT_FOR_CHATGPT.md)
 - [Phase 4B multi cloud file context](docs/PHASE_4B_MULTI_CLOUD_FILE_CONTEXT.md)
 - [Onboarding options](docs/ONBOARDING_OPTIONS.md)
@@ -53,6 +55,8 @@ Start here:
 - [Memory schema migration](supabase/migrations/20260628160000_create_memory_schema.sql)
 - [Memory Edge Function](supabase/functions/memory/index.ts)
 - [BYO setup script](scripts/setup-byo-supabase-memory.sh)
+- [Build context pack script](scripts/build-context-pack.sh)
+- [Build context pack PowerShell script](scripts/build-context-pack.ps1)
 - [Swift memory client](AppMemory/SupabaseMemoryClient.swift)
 
 ## Source controlled app
