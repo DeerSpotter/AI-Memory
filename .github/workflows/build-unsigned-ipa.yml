@@ -1,0 +1,136 @@
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_path:
+        description: "Optional .xcodeproj or .xcworkspace path. Leave blank to auto-detect."
+        required: false
+        default: ""
+      scheme:
+        description: "Optional Xcode scheme. Leave blank to auto-detect the first shared scheme."
+        required: false
+        default: ""
+      configuration:
+        description: "Xcode build configuration"
+        required: false
+        default: "Release"
+
+permissions:
+  contents: read
+
+jobs:
+  build-unsigned-ipa:
+    name: Build unsigned IPA
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Detect Xcode project and scheme
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECT_INPUT="${{ github.event.inputs.project_path }}"
+          SCHEME_INPUT="${{ github.event.inputs.scheme }}"
+
+          if [ -n "$PROJECT_INPUT" ]; then
+            PROJECT_PATH="$PROJECT_INPUT"
+          else
+            PROJECT_PATH="$(find . -maxdepth 4 \( -name '*.xcworkspace' -o -name '*.xcodeproj' \) | sort | head -n 1 || true)"
+          fi
+
+          if [ -z "$PROJECT_PATH" ]; then
+            echo "No .xcodeproj or .xcworkspace found in this repository. The IPA cannot be built until the actual Xcode source project is committed." >&2
+            exit 20
+          fi
+
+          if [[ "$PROJECT_PATH" == *.xcworkspace ]]; then
+            BUILD_KIND="workspace"
+            BUILD_FLAG="-workspace"
+          else
+            BUILD_KIND="project"
+            BUILD_FLAG="-project"
+          fi
+
+          if [ -n "$SCHEME_INPUT" ]; then
+            SCHEME="$SCHEME_INPUT"
+          else
+            xcodebuild -list "$BUILD_FLAG" "$PROJECT_PATH" -json > /tmp/xcode-list.json
+            SCHEME="$(python3 - <<'PY'
+import json
+with open('/tmp/xcode-list.json', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+for key in ('workspace', 'project'):
+    schemes = data.get(key, {}).get('schemes', [])
+    if schemes:
+        print(schemes[0])
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+)"
+          fi
+
+          if [ -z "$SCHEME" ]; then
+            echo "No shared Xcode scheme found. Commit a shared scheme or provide one manually when running the workflow." >&2
+            exit 21
+          fi
+
+          echo "project_path=$PROJECT_PATH" >> "$GITHUB_OUTPUT"
+          echo "build_flag=$BUILD_FLAG" >> "$GITHUB_OUTPUT"
+          echo "build_kind=$BUILD_KIND" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+
+          echo "Detected $BUILD_KIND: $PROJECT_PATH"
+          echo "Detected scheme: $SCHEME"
+
+      - name: Archive app without signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+
+          xcodebuild clean archive \
+            "${{ steps.detect.outputs.build_flag }}" "${{ steps.detect.outputs.project_path }}" \
+            -scheme "${{ steps.detect.outputs.scheme }}" \
+            -configuration "${{ github.event.inputs.configuration }}" \
+            -sdk iphoneos \
+            -archivePath "$PWD/build/App.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER=""
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/App.xcarchive/Products/Applications -maxdepth 1 -name '*.app' | head -n 1 || true)"
+
+          if [ -z "$APP_PATH" ]; then
+            echo "Archive completed but no .app was found under Products/Applications." >&2
+            exit 22
+          fi
+
+          rm -rf build/Payload
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/
+          (cd build && zip -qry ChatGPT-WebView-unsigned.ipa Payload)
+          ls -lh build/ChatGPT-WebView-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatGPT-WebView-unsigned-ipa
+          path: build/ChatGPT-WebView-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
