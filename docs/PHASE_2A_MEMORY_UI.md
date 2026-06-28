@@ -61,6 +61,12 @@ The WebView now:
 - handles `targetFrame == nil` popup navigation by loading the trusted OAuth URL into the same WebView
 - still rejects non HTTPS pages and arbitrary unrelated hosts
 
+## WebView lifecycle handling
+
+The ChatGPT tab now uses a persistent `ChatGPTWebViewStore` with a single `WKWebView` instance. This prevents the OAuth or MFA page from reloading when SwiftUI redraws the tab or when the app backgrounds and resumes.
+
+This can preserve the login page while the app is still alive in memory. If iOS fully terminates the app in the background, the page cannot be kept alive, but cookies and website data still use the default persistent WebKit data store.
+
 ## Build artifact
 
 The Phase 2A build workflow uploads:
