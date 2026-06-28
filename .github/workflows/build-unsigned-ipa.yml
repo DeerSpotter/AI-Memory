@@ -1,6 +1,15 @@
 name: Build Unsigned IPA
 
 on:
+  push:
+    branches:
+      - codex/allow-ipa-assets
+  pull_request:
+    paths:
+      - "**/*.swift"
+      - "**/*.xcodeproj/**"
+      - "**/*.xcworkspace/**"
+      - ".github/workflows/build-unsigned-ipa.yml"
   workflow_dispatch:
     inputs:
       project_path:
@@ -101,7 +110,7 @@ PY
           xcodebuild clean archive \
             "${{ steps.detect.outputs.build_flag }}" "${{ steps.detect.outputs.project_path }}" \
             -scheme "${{ steps.detect.outputs.scheme }}" \
-            -configuration "${{ github.event.inputs.configuration }}" \
+            -configuration "${{ github.event.inputs.configuration || 'Release' }}" \
             -sdk iphoneos \
             -archivePath "$PWD/build/App.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
