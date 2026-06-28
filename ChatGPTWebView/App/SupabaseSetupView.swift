@@ -21,6 +21,18 @@ struct SupabaseSetupView: View {
                         browserURL = URL(string: "https://supabase.com/dashboard")
                     }
 
+                    if let providersURL = supabaseProvidersURL() {
+                        Button("Open Supabase Auth Providers") {
+                            browserURL = providersURL
+                        }
+                    }
+
+                    if let urlConfigurationURL = supabaseURLConfigurationURL() {
+                        Button("Open Supabase URL Configuration") {
+                            browserURL = urlConfigurationURL
+                        }
+                    }
+
                     Button("Open GitHub OAuth Apps") {
                         browserURL = URL(string: "https://github.com/settings/developers")
                     }
@@ -132,7 +144,7 @@ struct SupabaseSetupView: View {
 
                 Section("If Login Opens Localhost") {
                     Text("That means Supabase finished GitHub login but redirected to the default Site URL instead of back to this app.")
-                    Text("In Supabase Auth URL Configuration, replace localhost with the app callback URL above, or add the app callback URL to the redirect allow list.")
+                    Text("Open Supabase URL Configuration. Set Site URL to the app callback URL, or add the app callback URL to Redirect URLs.")
                     Text("The GitHub OAuth App callback should stay as the Supabase /auth/v1/callback URL, not localhost.")
                 }
 
@@ -160,6 +172,27 @@ struct SupabaseSetupView: View {
                 publishableKey = config.publishableKey
             }
         }
+    }
+
+    private func projectRef() -> String? {
+        guard let config = try? SupabaseConfigValidation.normalize(
+            projectURLText: projectURLText,
+            publishableKey: publishableKey
+        ) else {
+            return nil
+        }
+
+        return config.projectRef
+    }
+
+    private func supabaseProvidersURL() -> URL? {
+        guard let ref = projectRef() else { return nil }
+        return URL(string: "https://supabase.com/dashboard/project/\(ref)/auth/providers")
+    }
+
+    private func supabaseURLConfigurationURL() -> URL? {
+        guard let ref = projectRef() else { return nil }
+        return URL(string: "https://supabase.com/dashboard/project/\(ref)/auth/url-configuration")
     }
 
     private func providerCallbackURLText() -> String? {
