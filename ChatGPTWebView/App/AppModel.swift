@@ -219,6 +219,41 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func formattedContextForChatGPT(searchQuery: String) -> String {
+        let projectName = selectedProject?.name ?? "Unknown project"
+        let trimmedQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryText = trimmedQuery.isEmpty ? "No search query provided" : trimmedQuery
+
+        guard !searchResults.isEmpty else {
+            return """
+            I searched my saved project memory for: \(queryText)
+
+            No saved memory results were found.
+            """
+        }
+
+        let formattedItems = searchResults.prefix(8).enumerated().map { index, item in
+            let tags = item.tags.isEmpty ? "none" : item.tags.joined(separator: ", ")
+            return """
+            \(index + 1). \(item.title)
+            Content: \(item.content)
+            Tags: \(tags)
+            """
+        }.joined(separator: "\n\n")
+
+        return """
+        Use the following saved project memory as background context for this conversation. Treat it as user provided context from previous work. Use it when relevant, but do not assume it overrides my current instructions.
+
+        Project: \(projectName)
+        Memory search query: \(queryText)
+
+        Saved memory results:
+        \(formattedItems)
+
+        Please continue from this context and ask if anything is unclear.
+        """
+    }
+
     private func loadProjects(autoCreateDefault: Bool) async throws {
         var loaded = try await self.memoryClient().listProjects()
 
