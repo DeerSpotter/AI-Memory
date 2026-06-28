@@ -104,7 +104,22 @@ Generated setup link or QR
 
 The setup link must include only public client config: project URL and publishable key. It must never include a secret key, service role key, OAuth client secret, or database password.
 
-#### D. Diagnostics screen
+#### D. In app setup browser
+
+Best for mobile users who need to configure GitHub or Supabase without losing their place in the app.
+
+```text
+Setup screen
+  -> Open Supabase Dashboard
+  -> Open GitHub OAuth Apps
+  -> copy app callback URL
+  -> copy provider callback URL
+  -> Done returns to the setup screen
+```
+
+This is not true iOS Picture in Picture. It uses an in app Safari sheet so the user can finish setup without fully switching context away from the app.
+
+#### E. Diagnostics screen
 
 The app should test the advanced setup and explain what is missing:
 
@@ -137,6 +152,8 @@ Private backend. Guided setup, config import, or manual setup.
 - Add clear warnings that hosted mode stores data in the maintainer hosted Supabase project.
 - Add export/delete controls before marking hosted mode production ready.
 - Add config import by deep link and QR code.
+- Add in app setup browser links for Supabase dashboard, GitHub OAuth Apps, and repo docs.
+- Add callback URL copy buttons.
 - Add diagnostics for provider not enabled, missing memory function, missing schema, and invalid callback URLs.
 - Add one command setup script for advanced desktop users.
 - Add ChatGPT connector assisted setup guide.
@@ -145,4 +162,4 @@ Private backend. Guided setup, config import, or manual setup.
 
 Phase 2A currently implements BYO mode. That was the safer first implementation because it avoids accidentally turning the maintainer's Supabase project into the backend for every installed copy.
 
-The next usability phase should add hosted mode as the default and keep BYO mode as Advanced Setup, but make Advanced Setup assisted through connector setup, CLI setup, config import, and diagnostics.
+The next usability phase should add hosted mode as the default and keep BYO mode as Advanced Setup, but make Advanced Setup assisted through connector setup, CLI setup, config import, in app setup browser, and diagnostics.
