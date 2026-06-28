@@ -9,6 +9,14 @@ struct MemoryTestView: View {
     @State private var memoryContent = "The trusted IPA should be built from this repository source through GitHub Actions, not downloaded from the upstream release."
     @State private var memoryTags = "repo, ipa, trust"
     @State private var searchQuery = "trusted ipa"
+    @State private var virtualMCPTitle = "Virtual MCP memory direction"
+    @State private var virtualMCPSummary = "The app should prototype the MCP connector as a virtual tool layer first. The virtual layer lives inside the app, uses the same tool name and JSON-style contract planned for the real MCP server, and saves approved context through the existing Supabase memory backend."
+    @State private var virtualMCPDecisions = "Keep the fixed context pack script for repeatable project memory.\nAdd the optional local context pack UI for targeted file selection.\nContinue treating the MCP connector as the real memory system.\nPrototype save_context_after_approval as a virtual tool inside the app before building the real server."
+    @State private var virtualMCPOpenTasks = "Add Phase 5 virtual MCP documentation.\nBuild the real HTTP MCP server after the virtual tool contract is proven.\nReuse the same tool names and schema in the real connector."
+    @State private var virtualMCPFiles = "ChatGPTWebView/VirtualMCP/VirtualMCPModels.swift\nChatGPTWebView/VirtualMCP/VirtualMCPMemoryFormatter.swift\nChatGPTWebView/App/AppModel.swift"
+    @State private var virtualMCPNextSteps = "Test the virtual save flow from the Memory tab.\nSearch memory for the saved virtual MCP result.\nPromote the same contract into mcp/memory-server later."
+    @State private var virtualMCPTags = "virtual-mcp, memory, connector, approval"
+    @State private var virtualMCPImportance = 5
 
     var body: some View {
         NavigationView {
@@ -73,6 +81,98 @@ struct MemoryTestView: View {
                                     MemoryResultRow(item: item)
                                 }
                             }
+                        }
+                    }
+
+                    MemoryCard(title: "Virtual MCP Save", systemImage: "point.3.connected.trianglepath.dotted") {
+                        Text("Prototype the future connector contract inside the app. Review this proposed memory, then approve the virtual `save_context_after_approval` tool call.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+
+                        ForEach(appModel.virtualMCPRegistry.tools) { tool in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(tool.name)
+                                        .font(.caption.monospaced().weight(.semibold))
+                                    Spacer()
+                                    if tool.requiresApproval {
+                                        Text("approval required")
+                                            .font(.caption2.weight(.semibold))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.orange.opacity(0.15), in: Capsule())
+                                    }
+                                }
+                                Text(tool.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(10)
+                            .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                        }
+
+                        TextField("Title", text: $virtualMCPTitle)
+                            .textFieldStyle(.roundedBorder)
+
+                        TextField("Summary", text: $virtualMCPSummary, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(3...8)
+
+                        TextField("Decisions, one per line", text: $virtualMCPDecisions, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(3...8)
+
+                        TextField("Open tasks, one per line", text: $virtualMCPOpenTasks, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(2...6)
+
+                        TextField("Files discussed, one per line", text: $virtualMCPFiles, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(2...6)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                        TextField("Next steps, one per line", text: $virtualMCPNextSteps, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(2...6)
+
+                        TextField("Tags, comma separated", text: $virtualMCPTags)
+                            .textFieldStyle(.roundedBorder)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                        Stepper("Importance: \(virtualMCPImportance)/5", value: $virtualMCPImportance, in: 1...5)
+
+                        Button {
+                            Task {
+                                await appModel.runVirtualSaveContextAfterApproval(
+                                    title: virtualMCPTitle,
+                                    summary: virtualMCPSummary,
+                                    decisionsText: virtualMCPDecisions,
+                                    openTasksText: virtualMCPOpenTasks,
+                                    filesDiscussedText: virtualMCPFiles,
+                                    nextStepsText: virtualMCPNextSteps,
+                                    tagsText: virtualMCPTags,
+                                    importance: virtualMCPImportance
+                                )
+                            }
+                        } label: {
+                            Label("Approve Virtual Save", systemImage: "checkmark.seal")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(appModel.isBusy || appModel.selectedProject == nil || virtualMCPTitle.isEmpty || virtualMCPSummary.isEmpty)
+
+                        if let result = appModel.lastVirtualMCPResult {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(result.message)
+                                    .font(.caption.weight(.semibold))
+                                MemoryInfoRow(label: "Tool", value: result.toolName)
+                                MemoryInfoRow(label: "Memory item", value: result.memoryItemID.uuidString)
+                                MemoryInfoRow(label: "Summary", value: result.sessionSummaryID.uuidString)
+                            }
+                            .padding(10)
+                            .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                         }
                     }
 
