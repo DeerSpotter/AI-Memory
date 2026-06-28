@@ -59,4 +59,31 @@ Option B: Build an OpenAI API chat tab
 
 Option C: Build a ChatGPT App/Action/MCP style bridge
   -> ChatGPT can call the same Supabase memory backend directly
+
+Option D: Add multi cloud file context links
+  -> app uploads large files into user connected cloud storage
+  -> backend creates file manifests, chunks, and searchable indexes
+  -> GPT receives a small context link instead of the full file
+  -> GPT calls backend tools for manifest lookup, search, and slice reads
 ```
+
+## File context link extension
+
+The future multi cloud file context layer extends this manual bridge.
+
+Instead of pasting extracted file content directly into ChatGPT, the app should paste a small context card like:
+
+```text
+File Context: project-archive.zip
+File ID: file_123
+Scope: read manifest, search, read extracted slices
+Available tools:
+- get_file_manifest(file_id)
+- list_zip_contents(file_id)
+- search_file(file_id, query)
+- read_file_slice(file_id, path, start, end)
+```
+
+This keeps the full file outside the GPT sandbox. GPT only receives the file summary and asks the backend for small relevant pieces when the future tool bridge is available.
+
+See `docs/PHASE_4B_MULTI_CLOUD_FILE_CONTEXT.md` for the full later phase design.

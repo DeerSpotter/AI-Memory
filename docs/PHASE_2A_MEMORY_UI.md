@@ -7,15 +7,40 @@ Make the iOS app talk to a user supplied Supabase memory backend.
 Phase 2A adds a source controlled SwiftUI app with:
 
 - trusted ChatGPT WebView tab
+- ChatGPT tab stop overlay
+- ChatGPT tab refresh overlay
 - always available Setup tab for assisted BYO configuration
 - bring your own Supabase setup screen
 - Supabase Auth screen
 - Keychain backed session storage
-- Memory Test screen
+- Memory dashboard first screen
 - automatic default memory project creation after login
 - project create/list flow
 - memory save/search flow
 - unsigned IPA build from repository source
+
+## Product rule: memory must reduce work
+
+Manual context writing is not the product goal.
+
+A memory system is only useful if it reduces the user's burden. A flow where the user must manually rewrite the active conversation into a memory form should not be treated as the main feature.
+
+Acceptable memory capture directions:
+
+```text
+OpenAI API chat tab
+  -> app owns the chat messages
+  -> app can automatically summarize and save important context
+
+ChatGPT App / MCP connector
+  -> ChatGPT can call memory tools directly
+  -> user can approve save actions
+  -> backend writes structured memory to Supabase
+
+Manual save/search UI
+  -> allowed only as admin/debug/fallback tooling
+  -> not the core product purpose
+```
 
 ## Architecture decision
 
@@ -40,6 +65,7 @@ This phase proves that the app can authenticate to Supabase, call the JWT protec
 - It does not replace ChatGPT with an OpenAI API based chat shell.
 - It does not let ChatGPT web automatically read Supabase memory.
 - It does not inject JavaScript into `chatgpt.com`.
+- It does not scrape the ChatGPT page or automatically read the full visible conversation.
 - It does not include any Supabase secret or service role key.
 - It does not reuse ChatGPT connector authentication tokens. Those belong to the ChatGPT platform session and are not exposed to the external IPA.
 - It does not hardcode the developer's Supabase project as the backend for all users.
@@ -76,6 +102,43 @@ User opens Setup tab
   -> app calls /functions/v1/memory with Authorization: Bearer <user JWT>
   -> Supabase RLS scopes rows to owner_id inside that user's project
 ```
+
+## ChatGPT tab quick actions
+
+The ChatGPT tab has small overlay controls above the WebView:
+
+```text
+Stop icon
+  -> attempts to stop current WebView activity quickly
+  -> useful when ChatGPT is responding down the wrong path and the page UI is slow to update
+
+Refresh icon
+  -> reloads the current ChatGPT WebView session
+```
+
+The Stop icon uses the WebView stop action. It does not click or scrape ChatGPT's internal page controls. Because this is still a WebView wrapper, it may not perfectly cancel every streaming response inside the ChatGPT page. A guaranteed stop/cancel action belongs in a future OpenAI API chat tab where the app owns the request lifecycle.
+
+The ChatGPT tab should not expose a manual write context button as the core memory flow. Manual context entry adds work instead of removing it.
+
+## Memory tab layout
+
+The Memory tab keeps the `externaldrive.connected.to.line.below` tab icon because that visual identity is clear and memorable.
+
+The screen itself is dashboard first:
+
+```text
+Memory tab
+  -> dashboard card with account, selected project, backend, project count, result count, status
+  -> quick actions for Refresh and Copy Context
+  -> Search Memory card
+  -> Save Memory card
+  -> Project management card
+  -> Account and Setup card
+```
+
+This keeps management and debugging available without pretending manual memory writing is the ideal workflow.
+
+Setup and account actions stay lower on the screen because the dedicated Setup tab already handles assisted configuration.
 
 ## Supabase social OAuth login
 
@@ -152,6 +215,8 @@ This prevents a new user from landing on `Selected: None` with Save/Search disab
 The ChatGPT tab now uses a persistent `ChatGPTWebViewStore` with a single `WKWebView` instance. This prevents the OAuth or MFA page from reloading when SwiftUI redraws the tab or when the app backgrounds and resumes.
 
 This can preserve the login page while the app is still alive in memory. If iOS fully terminates the app in the background, the page cannot be kept alive, but cookies and website data still use the default persistent WebKit data store.
+
+The ChatGPT tab also includes small stop and refresh controls. If the WebView feels frozen after returning to the app, the user can try stop first, then refresh the current ChatGPT session without restarting the app.
 
 ## Build artifact
 

@@ -68,7 +68,15 @@ iOS SwiftUI app
 
 This is the correct path for letting GPT use Supabase data as tools. A WebView alone cannot make the official ChatGPT web runtime use our database.
 
-### 5. Secure by default
+### 5. Virtual file context layer
+
+A later phase should let users connect cloud storage accounts and experience them as one AI file space.
+
+The file layer should keep large uploads, zips, PDFs, repo archives, spreadsheets, and document bundles outside the GPT sandbox. The backend should route files into user connected storage, process them with workers, and expose them to GPT through scoped context links and narrow tool calls.
+
+This does not replace the native ChatGPT upload button. It belongs in the app upload UI, the future OpenAI API chat tab, or a later ChatGPT App, Action, or MCP style bridge.
+
+### 6. Secure by default
 
 Security requirements:
 
@@ -78,6 +86,8 @@ Security requirements:
 - Store only user approved project memory.
 - Keep audit logs for tool activity.
 - Make deletion/export possible later.
+- Keep cloud provider secrets and tokens out of the iOS app.
+- Scope context links by user, project, file, tool permission, and expiration.
 
 ## Phase roadmap
 
@@ -108,6 +118,15 @@ Security requirements:
 - Store file metadata and extracted summaries.
 - Link GitHub artifacts, IPA builds, logs, and analysis outputs.
 - Add artifact search.
+
+### Phase 4B: Multi cloud file context layer
+
+- Add virtual file records that separate logical files from physical storage objects.
+- Add upload routing into user connected cloud storage.
+- Add processing jobs for zips, PDFs, Office files, repo archives, and extracted text.
+- Add file manifests, searchable chunks, and context links.
+- Add GPT tool endpoints for manifest lookup, search, and slice reads.
+- Keep this as a later phase until identity, memory, project selection, and backend audit logs are stable.
 
 ### Phase 5: Trust and release hardening
 
