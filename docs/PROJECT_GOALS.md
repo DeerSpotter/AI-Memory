@@ -76,7 +76,35 @@ The file layer should keep large uploads, zips, PDFs, repo archives, spreadsheet
 
 This does not replace the native ChatGPT upload button. It belongs in the app upload UI, the future OpenAI API chat tab, or a later ChatGPT App, Action, or MCP style bridge.
 
-### 6. Secure by default
+### 6. Virtual MCP connector path
+
+The app can prototype the future connector by virtualizing MCP tools inside the app first.
+
+The virtual MCP layer should use the same tool names, input contracts, output contracts, and approval requirements planned for the real ChatGPT App / MCP connector.
+
+Prototype architecture:
+
+```text
+Memory tab approval UI
+  -> virtual MCP tool contract
+  -> AppModel tool handler
+  -> SupabaseMemoryClient
+  -> Supabase Edge Function
+  -> Supabase memory tables
+```
+
+Future architecture:
+
+```text
+ChatGPT
+  -> real MCP server over HTTPS
+  -> same tool contract
+  -> Supabase memory backend
+```
+
+This lets the app prove the memory tool contract before exposing a real server endpoint.
+
+### 7. Secure by default
 
 Security requirements:
 
@@ -128,7 +156,16 @@ Security requirements:
 - Add GPT tool endpoints for manifest lookup, search, and slice reads.
 - Keep this as a later phase until identity, memory, project selection, and backend audit logs are stable.
 
-### Phase 5: Trust and release hardening
+### Phase 5: Virtual MCP memory
+
+- Add virtual MCP tool descriptors in the app.
+- Add the first approval based virtual tool: `save_context_after_approval`.
+- Wire the virtual tool through `AppModel` to `SupabaseMemoryClient`.
+- Save both a compact memory item and a session summary.
+- Add a Memory tab approval card for testing the flow.
+- Keep the same tool name and schema ready for a future real MCP server.
+
+### Phase 6: Trust and release hardening
 
 - Add signed build path.
 - Add release notes that include source commit, workflow run, and artifact hash.
