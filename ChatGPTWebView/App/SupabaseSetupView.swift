@@ -107,7 +107,7 @@ struct SupabaseSetupView: View {
                 }
 
                 Section("Callback URLs") {
-                    Text("Supabase Auth URL Configuration:")
+                    Text("Supabase Auth URL Configuration should allow this app callback:")
                     Text(appCallbackURL)
                         .font(.system(.footnote, design: .monospaced))
                         .textSelection(.enabled)
@@ -118,7 +118,7 @@ struct SupabaseSetupView: View {
                     }
 
                     if let providerCallback = providerCallbackURLText() {
-                        Text("Provider callback URL:")
+                        Text("GitHub OAuth App callback URL:")
                         Text(providerCallback)
                             .font(.system(.footnote, design: .monospaced))
                             .textSelection(.enabled)
@@ -128,6 +128,12 @@ struct SupabaseSetupView: View {
                             appModel.statusMessage = "Provider callback URL copied."
                         }
                     }
+                }
+
+                Section("If Login Opens Localhost") {
+                    Text("That means Supabase finished GitHub login but redirected to the default Site URL instead of back to this app.")
+                    Text("In Supabase Auth URL Configuration, replace localhost with the app callback URL above, or add the app callback URL to the redirect allow list.")
+                    Text("The GitHub OAuth App callback should stay as the Supabase /auth/v1/callback URL, not localhost.")
                 }
 
                 Section("Important") {
