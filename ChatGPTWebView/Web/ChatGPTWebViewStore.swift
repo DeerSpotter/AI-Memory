@@ -38,6 +38,10 @@ final class ChatGPTWebViewStore: ObservableObject {
         webView.load(URLRequest(url: startURL))
     }
 
+    func stopCurrentActivity() {
+        webView.stopLoading()
+    }
+
     func reloadCurrentSession() {
         if webView.isLoading {
             webView.stopLoading()
