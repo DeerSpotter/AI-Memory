@@ -34,10 +34,10 @@ struct VirtualMCPToolRegistry: Sendable {
         VirtualMCPToolDescriptor(
             name: "save_context_after_approval",
             title: "Save Context After Approval",
-            description: "Prototype MCP write tool. Saves an approved structured context proposal into Supabase memory using the same contract planned for the real connector.",
+            description: "Real backend MCP-style write tool. Saves an approved structured context proposal into Supabase memory through the memory Edge Function.",
             requiresApproval: true,
             inputContract: "project_id, title, summary, decisions, open_tasks, files_discussed, next_steps, tags, importance",
-            outputContract: "saved, project_id, memory_item_id, session_summary_id, message"
+            outputContract: "saved, project_id, memory_item_id, session_summary_id, tool_event_id, message"
         )
     ])
 
@@ -85,6 +85,7 @@ struct VirtualMCPSaveContextResult: Sendable, Hashable {
     let projectID: UUID
     let memoryItemID: UUID
     let sessionSummaryID: UUID
+    let toolEventID: UUID?
     let toolName: String
     let message: String
 }
