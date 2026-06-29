@@ -89,7 +89,8 @@ public actor SupabaseMemoryClient {
         sessionID: UUID? = nil,
         title: String,
         content: String,
-        tags: [String] = []
+        tags: [String] = [],
+        importance: Int? = nil
     ) async throws -> MemoryItem {
         var body: [String: Any] = [
             "action": "save_memory",
@@ -101,6 +102,10 @@ public actor SupabaseMemoryClient {
 
         if let sessionID {
             body["session_id"] = sessionID.uuidString
+        }
+
+        if let importance {
+            body["importance"] = importance
         }
 
         let response: SaveMemoryResponse = try await post(body)
@@ -123,7 +128,8 @@ public actor SupabaseMemoryClient {
         decisions: [String] = [],
         openTasks: [String] = [],
         filesDiscussed: [String] = [],
-        nextSteps: [String] = []
+        nextSteps: [String] = [],
+        importance: Int? = nil
     ) async throws -> MemorySessionSummary {
         var body: [String: Any] = [
             "action": "save_session_summary",
@@ -139,8 +145,49 @@ public actor SupabaseMemoryClient {
             body["session_id"] = sessionID.uuidString
         }
 
+        if let importance {
+            body["importance"] = importance
+        }
+
         let response: SaveSessionSummaryResponse = try await post(body)
         return response.session_summary
+    }
+
+    public func saveContextAfterApproval(
+        projectID: UUID,
+        sessionID: UUID? = nil,
+        title: String,
+        summary: String,
+        decisions: [String] = [],
+        openTasks: [String] = [],
+        filesDiscussed: [String] = [],
+        nextSteps: [String] = [],
+        tags: [String] = [],
+        importance: Int = 3
+    ) async throws -> SaveContextAfterApprovalResponse {
+        var body: [String: Any] = [
+            "action": "save_context_after_approval",
+            "project_id": projectID.uuidString,
+            "title": title,
+            "summary": summary,
+            "decisions": decisions,
+            "open_tasks": openTasks,
+            "files_discussed": filesDiscussed,
+            "next_steps": nextSteps,
+            "tags": tags,
+            "importance": importance,
+            "metadata": [
+                "source": "ios_virtual_mcp",
+                "approved": true,
+                "tool_name": "save_context_after_approval"
+            ]
+        ]
+
+        if let sessionID {
+            body["session_id"] = sessionID.uuidString
+        }
+
+        return try await post(body)
     }
 
     public func getProjectContext(projectID: UUID) async throws -> ProjectContext {
