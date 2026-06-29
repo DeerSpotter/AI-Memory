@@ -116,12 +116,12 @@ function approvedContextContent(body: MemoryRequest, importance: number): string
   return sections.join("\n\n");
 }
 
-function importedContextSummary(title: string, rawContext: string, source: string, chunkCount: number): string {
-  const preview = truncateText(rawContext, summaryPreviewLimit);
+function importedContextSummary(title: string, importedText: string, source: string, chunkCount: number): string {
+  const preview = truncateText(importedText, summaryPreviewLimit);
   return [
     `Imported approved context for: ${title}`,
     `Source: ${source}`,
-    `Raw context length: ${rawContext.length} characters`,
+    `Imported context length: ${importedText.length} characters`,
     `Stored chunks: ${chunkCount}`,
     "",
     "Preview:",
@@ -129,16 +129,16 @@ function importedContextSummary(title: string, rawContext: string, source: strin
   ].join("\n");
 }
 
-function importedMemoryContent(rawContext: string, source: string, chunkCount: number, importance: number): string {
+function importedMemoryContent(importedText: string, source: string, chunkCount: number, importance: number): string {
   return [
     "Imported session context approved by the user.",
     `Source: ${source}`,
     `Stored chunks: ${chunkCount}`,
     `Importance: ${importance}/5`,
-    "Source: mcp.ingest_context_after_approval",
+    "Source: mcp.import_session_after_approval",
     "",
     "Context:",
-    truncateText(rawContext, memoryPreviewLimit)
+    truncateText(importedText, memoryPreviewLimit)
   ].join("\n");
 }
 
@@ -149,6 +149,10 @@ async function insertToolEvent(
   response: JsonRecord,
   error?: string
 ) {
+  const textLength = typeof body.raw_context === "string"
+    ? body.raw_context.length
+    : typeof body.content === "string" ? body.content.length : 0;
+
   const { data } = await supabase
     .from("memory_tool_events")
     .insert({
@@ -162,7 +166,7 @@ async function insertToolEvent(
         source: body.source ?? null,
         importance: body.importance ?? null,
         has_summary: typeof body.summary === "string" && body.summary.trim().length > 0,
-        raw_context_length: typeof body.raw_context === "string" ? body.raw_context.length : 0,
+        imported_text_length: textLength,
         decisions_count: asStringArray(body.decisions).length,
         open_tasks_count: asStringArray(body.open_tasks).length,
         files_discussed_count: asStringArray(body.files_discussed).length,
@@ -175,6 +179,125 @@ async function insertToolEvent(
     .single();
 
   return data ?? null;
+}
+
+async function importApprovedSession(
+  supabase: ReturnType<typeof createClient>,
+  body: MemoryRequest
+): Promise<Response> {
+  const project_id = requireString(body.project_id, "project_id");
+  const title = requireString(body.title, "title");
+  const importedText = requireString(body.raw_context ?? body.content, "content");
+  const source = normalizeSessionSource(body.source);
+  const importance = clampImportance(body.importance);
+  const tags = uniqueTags(body.tags, ["session-import", "approved-import"]);
+  const chunks = chunkText(importedText);
+  const metadata = {
+    ...(body.metadata ?? {}),
+    approved: true,
+    source,
+    tool_name: "import_session_after_approval",
+    imported_text_length: importedText.length,
+    chunk_count: chunks.length
+  };
+
+  const { data: session, error: sessionError } = await supabase
+    .from("memory_sessions")
+    .insert({
+      project_id,
+      title,
+      source,
+      metadata
+    })
+    .select("id,project_id,title,source,external_ref,started_at,ended_at")
+    .single();
+
+  if (sessionError) throw sessionError;
+
+  const messageRows = chunks.map((chunk, index) => ({
+    project_id,
+    session_id: session.id,
+    role: "note",
+    content: chunk,
+    token_estimate: Math.ceil(chunk.length / 4),
+    metadata: {
+      chunk_index: index,
+      chunk_count: chunks.length,
+      source,
+      tool_name: "import_session_after_approval"
+    }
+  }));
+
+  const { data: messages, error: messagesError } = await supabase
+    .from("memory_messages")
+    .insert(messageRows)
+    .select("id");
+
+  if (messagesError) throw messagesError;
+
+  const memoryContent = importedMemoryContent(importedText, source, chunks.length, importance);
+  const { data: memory, error: memoryError } = await supabase
+    .from("memory_items")
+    .insert({
+      project_id,
+      source_session_id: session.id,
+      title,
+      content: memoryContent,
+      tags,
+      importance,
+      is_pinned: body.is_pinned === true,
+      metadata
+    })
+    .select("id,project_id,title,content,tags,importance,is_pinned,created_at,updated_at")
+    .single();
+
+  if (memoryError) throw memoryError;
+
+  const summary = typeof body.summary === "string" && body.summary.trim().length > 0
+    ? body.summary.trim()
+    : importedContextSummary(title, importedText, source, chunks.length);
+
+  const { data: sessionSummary, error: summaryError } = await supabase
+    .from("memory_session_summaries")
+    .insert({
+      project_id,
+      session_id: session.id,
+      summary,
+      decisions: asStringArray(body.decisions),
+      open_tasks: asStringArray(body.open_tasks),
+      files_discussed: asStringArray(body.files_discussed),
+      next_steps: asStringArray(body.next_steps),
+      importance,
+      metadata
+    })
+    .select("id,project_id,session_id,summary,decisions,open_tasks,files_discussed,next_steps,importance,created_at")
+    .single();
+
+  if (summaryError) throw summaryError;
+
+  const response = {
+    saved: true,
+    project_id,
+    session_id: session.id,
+    message_count: messages?.length ?? chunks.length,
+    memory_item_id: memory.id,
+    session_summary_id: sessionSummary.id,
+    tool_name: "import_session_after_approval"
+  };
+  const toolEvent = await insertToolEvent(
+    supabase,
+    { ...body, session_id: session.id },
+    "ok",
+    response
+  );
+
+  return jsonResponse({
+    ...response,
+    session,
+    memory,
+    session_summary: sessionSummary,
+    tool_event: toolEvent
+  });
 }
 
 Deno.serve(async (req: Request) => {
@@ -349,120 +472,9 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      case "ingest_context_after_approval": {
-        const project_id = requireString(body.project_id, "project_id");
-        const title = requireString(body.title, "title");
-        const rawContext = requireString(body.raw_context ?? body.content, "raw_context");
-        const source = normalizeSessionSource(body.source);
-        const importance = clampImportance(body.importance);
-        const tags = uniqueTags(body.tags, ["session-import", "approved-import"]);
-        const chunks = chunkText(rawContext);
-        const metadata = {
-          ...(body.metadata ?? {}),
-          approved: true,
-          source,
-          tool_name: "ingest_context_after_approval",
-          raw_context_length: rawContext.length,
-          chunk_count: chunks.length
-        };
-
-        const { data: session, error: sessionError } = await supabase
-          .from("memory_sessions")
-          .insert({
-            project_id,
-            title,
-            source,
-            metadata
-          })
-          .select("id,project_id,title,source,external_ref,started_at,ended_at")
-          .single();
-
-        if (sessionError) throw sessionError;
-
-        const messageRows = chunks.map((chunk, index) => ({
-          project_id,
-          session_id: session.id,
-          role: "note",
-          content: chunk,
-          token_estimate: Math.ceil(chunk.length / 4),
-          metadata: {
-            chunk_index: index,
-            chunk_count: chunks.length,
-            source,
-            tool_name: "ingest_context_after_approval"
-          }
-        }));
-
-        const { data: messages, error: messagesError } = await supabase
-          .from("memory_messages")
-          .insert(messageRows)
-          .select("id");
-
-        if (messagesError) throw messagesError;
-
-        const memoryContent = importedMemoryContent(rawContext, source, chunks.length, importance);
-        const { data: memory, error: memoryError } = await supabase
-          .from("memory_items")
-          .insert({
-            project_id,
-            source_session_id: session.id,
-            title,
-            content: memoryContent,
-            tags,
-            importance,
-            is_pinned: body.is_pinned === true,
-            metadata
-          })
-          .select("id,project_id,title,content,tags,importance,is_pinned,created_at,updated_at")
-          .single();
-
-        if (memoryError) throw memoryError;
-
-        const summary = typeof body.summary === "string" && body.summary.trim().length > 0
-          ? body.summary.trim()
-          : importedContextSummary(title, rawContext, source, chunks.length);
-
-        const { data: sessionSummary, error: summaryError } = await supabase
-          .from("memory_session_summaries")
-          .insert({
-            project_id,
-            session_id: session.id,
-            summary,
-            decisions: asStringArray(body.decisions),
-            open_tasks: asStringArray(body.open_tasks),
-            files_discussed: asStringArray(body.files_discussed),
-            next_steps: asStringArray(body.next_steps),
-            importance,
-            metadata
-          })
-          .select("id,project_id,session_id,summary,decisions,open_tasks,files_discussed,next_steps,importance,created_at")
-          .single();
-
-        if (summaryError) throw summaryError;
-
-        const response = {
-          saved: true,
-          project_id,
-          session_id: session.id,
-          message_count: messages?.length ?? chunks.length,
-          memory_item_id: memory.id,
-          session_summary_id: sessionSummary.id,
-          tool_name: "ingest_context_after_approval"
-        };
-        const toolEvent = await insertToolEvent(
-          supabase,
-          { ...body, session_id: session.id },
-          "ok",
-          response
-        );
-
-        return jsonResponse({
-          ...response,
-          session,
-          memory,
-          session_summary: sessionSummary,
-          tool_event: toolEvent
-        });
+      case "ingest_context_after_approval":
+      case "import_session_after_approval": {
+        return await importApprovedSession(supabase, body);
       }
 
       case "search_memory": {
