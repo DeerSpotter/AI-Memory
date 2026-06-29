@@ -38,6 +38,14 @@ struct VirtualMCPToolRegistry: Sendable {
             requiresApproval: true,
             inputContract: "project_id, title, summary, decisions, open_tasks, files_discussed, next_steps, tags, importance",
             outputContract: "saved, project_id, memory_item_id, session_summary_id, tool_event_id, message"
+        ),
+        VirtualMCPToolDescriptor(
+            name: "import_session_after_approval",
+            title: "Import Session After Approval",
+            description: "Imports pasted session context directly from the app into Supabase memory without using a ChatGPT connector write.",
+            requiresApproval: true,
+            inputContract: "project_id, title, content, source, tags, importance",
+            outputContract: "saved, project_id, memory_item_id, session_summary_id, tool_event_id, message"
         )
     ])
 
@@ -81,6 +89,16 @@ struct VirtualMCPSaveContextProposal: Sendable, Hashable {
 }
 
 struct VirtualMCPSaveContextResult: Sendable, Hashable {
+    let saved: Bool
+    let projectID: UUID
+    let memoryItemID: UUID
+    let sessionSummaryID: UUID
+    let toolEventID: UUID?
+    let toolName: String
+    let message: String
+}
+
+struct SessionContextImportResult: Sendable, Hashable {
     let saved: Bool
     let projectID: UUID
     let memoryItemID: UUID
