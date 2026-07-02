@@ -2,6 +2,12 @@ import Foundation
 import UIKit
 import WebKit
 
+struct ChatGPTPDFExport: Sendable, Hashable {
+    let title: String
+    let sourceURL: String?
+    let data: Data
+}
+
 @MainActor
 final class ChatGPTWebViewStore: ObservableObject {
     let webView: WKWebView
@@ -59,6 +65,47 @@ final class ChatGPTWebViewStore: ObservableObject {
             webView.stopLoading()
         }
         webView.load(URLRequest(url: startURL))
+    }
+
+    func exportCurrentPagePDF() async throws -> ChatGPTPDFExport {
+        let configuration = WKPDFConfiguration()
+        let contentSize = webView.scrollView.contentSize
+        let bounds = webView.bounds.size
+        let width = max(contentSize.width, bounds.width, 390)
+        let height = max(contentSize.height, bounds.height, 844)
+        configuration.rect = CGRect(x: 0, y: 0, width: width, height: height)
+
+        let data = try await withCheckedThrowingContinuation { continuation in
+            webView.createPDF(configuration: configuration) { result in
+                switch result {
+                case .success(let data):
+                    continuation.resume(returning: data)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+
+        return ChatGPTPDFExport(
+            title: cleanTitle(webView.title),
+            sourceURL: webView.url?.absoluteString,
+            data: data
+        )
+    }
+
+    private func cleanTitle(_ value: String?) -> String {
+        let trimmed = (value ?? "")
+            .replacingOccurrences(of: "ChatGPT - ", with: "")
+            .replacingOccurrences(of: " - ChatGPT", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !trimmed.isEmpty && trimmed.lowercased() != "chatgpt" {
+            return trimmed
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH.mm"
+        return "ChatGPT chat \(formatter.string(from: Date()))"
     }
 }
 
