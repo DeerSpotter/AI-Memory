@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import WebKit
 
-struct ChatGPTPDFExport: Sendable, Hashable {
+struct ChatGPTPDFExport {
     let title: String
     let sourceURL: String?
     let data: Data
@@ -75,7 +75,7 @@ final class ChatGPTWebViewStore: ObservableObject {
         let height = max(contentSize.height, bounds.height, 844)
         configuration.rect = CGRect(x: 0, y: 0, width: width, height: height)
 
-        let data = try await withCheckedThrowingContinuation { continuation in
+        let data: Data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
             webView.createPDF(configuration: configuration) { result in
                 switch result {
                 case .success(let data):
