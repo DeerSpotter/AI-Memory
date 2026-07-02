@@ -15,7 +15,9 @@ struct LocalMemoryDetailView: View {
                     .font(.title2.weight(.bold))
 
                 Button {
+                    PendingLocalMemoryAttachment.mark(entry)
                     appModel.startNewChat(using: entry)
+                    appModel.statusMessage = "Opening new chat with saved PDF ready to attach."
                 } label: {
                     Label("Start New Chat", systemImage: "bubble.left.and.bubble.right")
                         .frame(maxWidth: .infinity)
