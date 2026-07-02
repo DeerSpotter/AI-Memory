@@ -60,7 +60,7 @@ struct ChatGPTTabView: View {
 
         isExportingContext = true
 
-        Task {
+        Task { @MainActor in
             defer {
                 isExportingContext = false
             }
