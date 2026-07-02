@@ -9,9 +9,13 @@ final class AppModel: ObservableObject {
     @Published var projects: [MemoryProject] = []
     @Published var selectedProject: MemoryProject?
     @Published var searchResults: [MemoryItem] = []
+    @Published var localMemoryEntries: [LocalMemoryEntry] = []
+    @Published var localMemorySearchResults: [LocalMemoryEntry] = []
+    @Published var localRenderedContext = ""
     @Published var diagnostics: [SupabaseDiagnosticResult] = []
     @Published private(set) var lastVirtualMCPResult: VirtualMCPSaveContextResult?
     @Published private(set) var lastSessionImportResult: SessionContextImportResult?
+    @Published private(set) var lastLocalMemorySave: LocalMemorySaveResult?
     @Published var isBusy = false
 
     let configStore = SupabaseConfigStore()
@@ -22,12 +26,21 @@ final class AppModel: ObservableObject {
     private let tokenStore = TokenStore()
     private let oauthSession = OAuthWebAuthenticationSession()
     private let diagnosticsClient = SupabaseDiagnosticsClient()
+    private let localMemoryStore = LocalMemoryStore()
     private let defaultProjectName = "ChatGPT-WebView"
     private let defaultProjectDescription = "Default memory project for ChatGPT WebView."
 
+    init() {
+        reloadLocalMemory()
+    }
+
     func restoreSession() async {
+        reloadLocalMemory()
+
         guard self.configStore.config != nil else {
-            self.statusMessage = "Add your Supabase project URL and publishable key."
+            self.statusMessage = localMemoryEntries.isEmpty
+                ? "Add your Supabase project URL and publishable key, or use Local Vault offline."
+                : "Local Vault loaded. Supabase setup is optional."
             return
         }
 
@@ -73,7 +86,7 @@ final class AppModel: ObservableObject {
     func clearConfig() {
         self.signOut(clearConfig: true)
         self.diagnostics = []
-        self.statusMessage = "Supabase project config cleared."
+        self.statusMessage = "Supabase project config cleared. Local Vault remains on this device."
     }
 
     func runDiagnostics(projectURLText: String, publishableKey: String) async {
@@ -172,7 +185,7 @@ final class AppModel: ObservableObject {
         if clearConfig {
             self.configStore.clear()
         }
-        self.statusMessage = "Logged out."
+        self.statusMessage = "Logged out. Local Vault remains on this device."
     }
 
     func refreshProjects(autoCreateDefault: Bool = false) async {
@@ -218,6 +231,75 @@ final class AppModel: ObservableObject {
         await runBusy("Searching memory...") { [self] in
             self.searchResults = try await self.memoryClient().searchMemory(projectID: selectedProject.id, query: query)
             self.statusMessage = "Found \(self.searchResults.count) result(s)."
+        }
+    }
+
+    func reloadLocalMemory() {
+        do {
+            self.localMemoryEntries = try localMemoryStore.loadEntries()
+            if localMemorySearchResults.isEmpty {
+                self.localMemorySearchResults = Array(localMemoryEntries.prefix(10))
+            }
+        } catch {
+            self.statusMessage = "Local Vault load failed: \(error.localizedDescription)"
+        }
+    }
+
+    func saveLocalSessionContext(
+        title: String,
+        content: String,
+        source: String,
+        tagsText: String,
+        importance: Int
+    ) {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedTitle.isEmpty else {
+            self.statusMessage = "Local save requires a title."
+            return
+        }
+
+        guard !trimmedContent.isEmpty else {
+            self.statusMessage = "Paste session context before saving locally."
+            return
+        }
+
+        do {
+            let projectName = selectedProject?.name ?? defaultProjectName
+            let result = try localMemoryStore.saveEntry(
+                projectName: projectName,
+                title: trimmedTitle,
+                content: trimmedContent,
+                source: source,
+                tags: parseCommaSeparatedList(tagsText),
+                importance: importance
+            )
+            self.lastLocalMemorySave = result
+            self.localMemoryEntries = try localMemoryStore.loadEntries()
+            self.localMemorySearchResults = Array(localMemoryEntries.prefix(10))
+            self.statusMessage = result.message
+        } catch {
+            self.statusMessage = "Local save failed: \(error.localizedDescription)"
+        }
+    }
+
+    func searchLocalMemory(query: String) {
+        do {
+            self.localMemorySearchResults = try localMemoryStore.search(query)
+            self.statusMessage = "Found \(localMemorySearchResults.count) local result(s)."
+        } catch {
+            self.statusMessage = "Local search failed: \(error.localizedDescription)"
+        }
+    }
+
+    func renderLocalProjectContext() {
+        do {
+            let projectName = selectedProject?.name ?? defaultProjectName
+            self.localRenderedContext = try localMemoryStore.renderProjectContext(projectName: projectName)
+            self.statusMessage = "Rendered local project context."
+        } catch {
+            self.statusMessage = "Local context render failed: \(error.localizedDescription)"
         }
     }
 
