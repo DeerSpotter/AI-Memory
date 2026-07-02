@@ -2,33 +2,38 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
+    @State private var selectedTab: AppTab = .chatgpt
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             ChatGPTTabView()
                 .tabItem {
                     Label("ChatGPT", systemImage: "bubble.left.and.bubble.right")
                 }
+                .tag(AppTab.chatgpt)
 
-            Group {
-                if appModel.configStore.config == nil {
-                    SupabaseSetupRequiredView()
-                } else if appModel.isAuthenticated {
-                    MemoryTestView()
-                } else {
-                    AuthView()
+            MemoryTestView()
+                .tabItem {
+                    Label("Memory", systemImage: "externaldrive.connected.to.line.below")
                 }
-            }
-            .tabItem {
-                Label("Memory", systemImage: "externaldrive.connected.to.line.below")
-            }
+                .tag(AppTab.memory)
 
             SupabaseSetupView()
                 .tabItem {
                     Label("Setup", systemImage: "gearshape")
                 }
+                .tag(AppTab.setup)
+        }
+        .onChange(of: appModel.openChatGPTTabRequestID) { _ in
+            selectedTab = .chatgpt
         }
     }
+}
+
+private enum AppTab: Hashable {
+    case chatgpt
+    case memory
+    case setup
 }
 
 struct SupabaseSetupRequiredView: View {
@@ -39,10 +44,10 @@ struct SupabaseSetupRequiredView: View {
                     .font(.largeTitle)
                     .foregroundColor(.secondary)
 
-                Text("Supabase setup required")
+                Text("Supabase setup optional")
                     .font(.headline)
 
-                Text("Open the Setup tab to run assisted setup, diagnostics, and copy callback URLs before logging in.")
+                Text("Local Device Memory Vault works without Supabase. Open Setup only when you want Supabase sync, diagnostics, and login.")
                     .font(.footnote)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
