@@ -9,6 +9,7 @@ struct ChatGPTTabView: View {
     var body: some View {
         ZStack(alignment: .top) {
             SecureChatGPTWebView(store: webViewStore)
+                .ignoresSafeArea(.container, edges: .bottom)
                 .ignoresSafeArea(.keyboard, edges: .bottom)
 
             HStack(spacing: 10) {
@@ -30,7 +31,15 @@ struct ChatGPTTabView: View {
             .padding(.horizontal, 12)
         }
         .onChange(of: appModel.openChatGPTTabRequestID) { _ in
-            webViewStore.startNewChat()
+            let pendingFiles = PendingLocalMemoryAttachment.consumeFileURLs()
+            webViewStore.startNewChatWithPendingUploadURLs(pendingFiles)
+
+            if !pendingFiles.isEmpty {
+                appModel.statusMessage = "Opening new chat and preparing saved PDF attachment."
+                Task { @MainActor in
+                    await webViewStore.triggerPendingAttachmentPicker()
+                }
+            }
         }
     }
 
