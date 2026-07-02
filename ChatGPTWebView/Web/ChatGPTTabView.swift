@@ -11,25 +11,39 @@ struct ChatGPTTabView: View {
             SecureChatGPTWebView(store: webViewStore)
                 .ignoresSafeArea(.keyboard, edges: .bottom)
 
-            HStack(spacing: 10) {
-                SaveContextOverlayButton {
-                    isShowingSaveContext = true
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    SaveContextOverlayButton {
+                        isShowingSaveContext = true
+                    }
+
+                    CircleIconButton(
+                        systemImage: "stop.circle",
+                        accessibilityLabel: "Stop ChatGPT activity",
+                        accessibilityHint: "Attempts to stop the current WebView activity quickly"
+                    ) {
+                        webViewStore.stopCurrentActivity()
+                    }
+
+                    CircleIconButton(
+                        systemImage: "arrow.clockwise",
+                        accessibilityLabel: "Reload ChatGPT session",
+                        accessibilityHint: "Reloads the current ChatGPT WebView page if the app feels frozen"
+                    ) {
+                        webViewStore.reloadCurrentSession()
+                    }
                 }
 
-                CircleIconButton(
-                    systemImage: "stop.circle",
-                    accessibilityLabel: "Stop ChatGPT activity",
-                    accessibilityHint: "Attempts to stop the current WebView activity quickly"
-                ) {
-                    webViewStore.stopCurrentActivity()
-                }
-
-                CircleIconButton(
-                    systemImage: "arrow.clockwise",
-                    accessibilityLabel: "Reload ChatGPT session",
-                    accessibilityHint: "Reloads the current ChatGPT WebView page if the app feels frozen"
-                ) {
-                    webViewStore.reloadCurrentSession()
+                if appModel.pendingLocalStartContext != nil {
+                    PendingContextBanner(
+                        onCopy: {
+                            UIPasteboard.general.string = appModel.pendingLocalStartContext
+                            appModel.statusMessage = "Copied saved context again. Paste it into ChatGPT."
+                        },
+                        onClear: {
+                            appModel.clearPendingLocalStartContext()
+                        }
+                    )
                 }
             }
             .padding(.top, 12)
@@ -38,6 +52,9 @@ struct ChatGPTTabView: View {
         .sheet(isPresented: $isShowingSaveContext) {
             SaveContextSheet()
                 .environmentObject(appModel)
+        }
+        .onChange(of: appModel.openChatGPTTabRequestID) { _ in
+            webViewStore.startNewChat()
         }
     }
 }
@@ -48,7 +65,7 @@ private struct SaveContextOverlayButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: "externaldrive.badge.plus")
+                Image(systemName: "doc.badge.plus")
                     .font(.system(size: 14, weight: .semibold))
                 Text("Save Context")
                     .font(.system(size: 14, weight: .semibold))
@@ -65,7 +82,42 @@ private struct SaveContextOverlayButton: View {
         )
         .shadow(radius: 2)
         .accessibilityLabel("Save context to local memory")
-        .accessibilityHint("Opens a local memory save sheet for pasted ChatGPT session context")
+        .accessibilityHint("Opens a local memory PDF save sheet for pasted ChatGPT session context")
+    }
+}
+
+private struct PendingContextBanner: View {
+    let onCopy: () -> Void
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "doc.on.clipboard")
+                .font(.caption.weight(.semibold))
+            Text("Saved context copied. Paste it into the new chat.")
+                .font(.caption.weight(.semibold))
+                .lineLimit(2)
+            Spacer(minLength: 8)
+            Button("Copy") {
+                onCopy()
+            }
+            .font(.caption.weight(.semibold))
+            Button {
+                onClear()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .font(.caption)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .foregroundColor(.primary)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(radius: 2)
     }
 }
 
@@ -82,11 +134,11 @@ private struct SaveContextSheet: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Save this session context to the on-device Local Vault. The app cannot safely scrape ChatGPT's page, so paste the context you want saved.")
+                    Text("Save this session context as a PDF in the on-device Local Vault. The app cannot safely scrape ChatGPT's page, so paste the context you want saved.")
                         .font(.footnote)
                         .foregroundColor(.secondary)
 
-                    TextField("Title", text: $title)
+                    TextField("Chat title", text: $title)
                         .textFieldStyle(.roundedBorder)
 
                     TextField("Source", text: $source)
@@ -101,12 +153,12 @@ private struct SaveContextSheet: View {
 
                     Stepper("Importance: \(importance)/5", value: $importance, in: 1...5)
 
-                    Text("Context")
+                    Text("Full chat/context text")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.secondary)
 
                     TextEditor(text: $content)
-                        .frame(minHeight: 220)
+                        .frame(minHeight: 260)
                         .padding(8)
                         .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
                         .overlay(
@@ -150,7 +202,7 @@ private struct SaveContextSheet: View {
                             dismiss()
                         }
                     } label: {
-                        Label("Save Local Context", systemImage: "externaldrive.badge.checkmark")
+                        Label("Save Local PDF", systemImage: "doc.badge.plus")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
