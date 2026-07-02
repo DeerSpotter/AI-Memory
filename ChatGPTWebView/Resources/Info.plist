@@ -33,11 +33,15 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Microphone access is used only when ChatGPT web voice input requests it.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Speech recognition is used only when ChatGPT web voice input requests it.</string>
     <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
+    <key>UIFileSharingEnabled</key>
     <true/>
     <key>UILaunchScreen</key>
     <dict/>
