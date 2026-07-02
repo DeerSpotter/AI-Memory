@@ -3,6 +3,7 @@ import Foundation
 enum LocalMemoryStoreError: LocalizedError {
     case emptyMarkdown
     case missingPDF
+    case missingMarkdown
 
     var errorDescription: String? {
         switch self {
@@ -10,6 +11,8 @@ enum LocalMemoryStoreError: LocalizedError {
             return "The exported ChatGPT conversation did not contain readable Markdown."
         case .missingPDF:
             return "No saved PDF file was found for this memory entry."
+        case .missingMarkdown:
+            return "No saved Markdown file was found for this memory entry."
         }
     }
 }
@@ -21,6 +24,7 @@ final class LocalMemoryStore {
     private let markdown: URL
     private let visibleRoot: URL
     private let visiblePDFs: URL
+    private let visibleMarkdown: URL
     private let index: URL
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -36,6 +40,7 @@ final class LocalMemoryStore {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first ?? fileManager.temporaryDirectory
         self.visibleRoot = documents.appendingPathComponent("ChatGPT Memory", isDirectory: true)
         self.visiblePDFs = visibleRoot.appendingPathComponent("PDFs", isDirectory: true)
+        self.visibleMarkdown = visibleRoot.appendingPathComponent("Markdown", isDirectory: true)
 
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
@@ -91,24 +96,40 @@ final class LocalMemoryStore {
     func pdfURL(for entry: LocalMemoryEntry) -> URL? { url(entry.pdfFilename, in: pdfs) }
     func markdownURL(for entry: LocalMemoryEntry) -> URL? { url(entry.markdownFilename, in: markdown) }
     func visiblePDFURL(for entry: LocalMemoryEntry) -> URL? { url(visiblePDFName(for: entry), in: visiblePDFs) }
+    func visibleMarkdownURL(for entry: LocalMemoryEntry) -> URL? { url(visibleMarkdownName(for: entry), in: visibleMarkdown) }
     func markdownText(for entry: LocalMemoryEntry) -> String? { markdownURL(for: entry).flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? (entry.content.isEmpty ? nil : entry.content) }
-    func fileURLs(for entry: LocalMemoryEntry) -> [URL] { [visiblePDFURL(for: entry), pdfURL(for: entry), markdownURL(for: entry)].compactMap { $0 }.uniqueByPath() }
+    func fileURLs(for entry: LocalMemoryEntry) -> [URL] { [visiblePDFURL(for: entry), visibleMarkdownURL(for: entry), pdfURL(for: entry), markdownURL(for: entry)].compactMap { $0 }.uniqueByPath() }
 
     @discardableResult
     func exportPDFToFiles(for entry: LocalMemoryEntry) throws -> URL {
         guard let source = pdfURL(for: entry) else { throw LocalMemoryStoreError.missingPDF }
         try ensureVisibleFolders()
         let destination = visiblePDFs.appendingPathComponent(visiblePDFName(for: entry))
-        if fm.fileExists(atPath: destination.path) {
-            try fm.removeItem(at: destination)
-        }
+        if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
         try fm.copyItem(at: source, to: destination)
+        return destination
+    }
+
+    @discardableResult
+    func exportMarkdownToFiles(for entry: LocalMemoryEntry) throws -> URL {
+        try ensureVisibleFolders()
+        let destination = visibleMarkdown.appendingPathComponent(visibleMarkdownName(for: entry))
+        if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
+
+        if let source = markdownURL(for: entry) {
+            try fm.copyItem(at: source, to: destination)
+        } else if let text = markdownText(for: entry) {
+            try text.write(to: destination, atomically: true, encoding: .utf8)
+        } else {
+            throw LocalMemoryStoreError.missingMarkdown
+        }
+
         return destination
     }
 
     func deleteEntry(_ entry: LocalMemoryEntry) throws {
         var entries = try loadEntries(); entries.removeAll { $0.id == entry.id }
-        for fileURL in [pdfURL(for: entry), markdownURL(for: entry), visiblePDFURL(for: entry)].compactMap({ $0 }) {
+        for fileURL in [pdfURL(for: entry), markdownURL(for: entry), visiblePDFURL(for: entry), visibleMarkdownURL(for: entry)].compactMap({ $0 }) {
             try? fm.removeItem(at: fileURL)
         }
         try write(entries)
@@ -119,8 +140,11 @@ final class LocalMemoryStore {
     }
 
     private func visiblePDFName(for entry: LocalMemoryEntry) -> String {
-        let base = cleanFileName(entry.title, fallback: entry.id.uuidString)
-        return "\(base).pdf"
+        "\(cleanFileName(entry.title, fallback: entry.id.uuidString)).pdf"
+    }
+
+    private func visibleMarkdownName(for entry: LocalMemoryEntry) -> String {
+        "\(cleanFileName(entry.title, fallback: entry.id.uuidString)).md"
     }
 
     private func url(_ name: String?, in folder: URL) -> URL? {
@@ -138,6 +162,7 @@ final class LocalMemoryStore {
     private func ensureVisibleFolders() throws {
         try fm.createDirectory(at: visibleRoot, withIntermediateDirectories: true)
         try fm.createDirectory(at: visiblePDFs, withIntermediateDirectories: true)
+        try fm.createDirectory(at: visibleMarkdown, withIntermediateDirectories: true)
     }
 
     private func write(_ entries: [LocalMemoryEntry]) throws { try ensureInternalFolders(); try encoder.encode(entries.sorted { $0.updatedAt > $1.updatedAt }).write(to: index, options: [.atomic]) }
