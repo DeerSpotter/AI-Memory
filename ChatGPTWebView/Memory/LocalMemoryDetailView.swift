@@ -109,8 +109,6 @@ private struct LocalPDFPreview: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PDFView, context: Context) {
-        if uiView.document?.documentURL != url {
-            uiView.document = PDFDocument(url: url)
-        }
+        uiView.document = PDFDocument(url: url)
     }
 }
