@@ -10,6 +10,8 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
     var importance: Int
     var createdAt: Date
     var updatedAt: Date
+    var pdfFilename: String?
+    var attachmentFilenames: [String]
 
     init(
         id: UUID = UUID(),
@@ -20,7 +22,9 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
         tags: [String],
         importance: Int,
         createdAt: Date = Date(),
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        pdfFilename: String? = nil,
+        attachmentFilenames: [String] = []
     ) {
         self.id = id
         self.projectName = projectName
@@ -31,6 +35,8 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
         self.importance = min(max(importance, 1), 5)
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.pdfFilename = pdfFilename
+        self.attachmentFilenames = attachmentFilenames
     }
 }
 
