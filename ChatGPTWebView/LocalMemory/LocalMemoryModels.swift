@@ -38,6 +38,21 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
         self.pdfFilename = pdfFilename
         self.attachmentFilenames = attachmentFilenames
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.projectName = try container.decode(String.self, forKey: .projectName)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.content = try container.decode(String.self, forKey: .content)
+        self.source = try container.decode(String.self, forKey: .source)
+        self.tags = try container.decode([String].self, forKey: .tags)
+        self.importance = try container.decode(Int.self, forKey: .importance)
+        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+        self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        self.pdfFilename = try container.decodeIfPresent(String.self, forKey: .pdfFilename)
+        self.attachmentFilenames = try container.decodeIfPresent([String].self, forKey: .attachmentFilenames) ?? []
+    }
 }
 
 struct LocalMemorySaveResult: Sendable, Hashable {
