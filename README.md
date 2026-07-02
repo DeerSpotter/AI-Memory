@@ -14,6 +14,7 @@ The upstream release IPA should not be treated as trusted unless that exact IPA 
 - Safari 16+ User-Agent spoofing
 - Mic input (speech-to-text)
 - Dark mode support
+- ChatGPT tab Save Context button for local current-conversation Markdown and PDF export
 - ChatGPT tab stop button for quickly stopping current WebView activity
 - ChatGPT tab refresh button for reloading a stale or frozen WebView session
 - Bring your own Supabase project setup
@@ -27,6 +28,16 @@ The upstream release IPA should not be treated as trusted unless that exact IPA 
 - Copy context for ChatGPT workflow
 - TrollStore compatibility
 - Manual or Xcode install
+
+## Local chat context export direction
+
+The ChatGPT tab includes a Save Context action that injects a local JavaScript extractor into the active `WKWebView`, reads the currently open ChatGPT conversation from the rendered page, and saves both Markdown and PDF files under the app Documents folder.
+
+This is intentionally not a manual memory entry workflow. The user opens a ChatGPT conversation and taps Save Context. The app creates files from the conversation title and current timestamp, stores them under `Documents/ChatGPT Context Exports/<conversation title>/`, and opens the iOS share sheet for the generated `.md` and `.pdf` files.
+
+See:
+
+- [Local ChatGPT export](docs/LOCAL_CHAT_EXPORT.md)
 
 ## Supabase memory direction
 
@@ -47,6 +58,7 @@ Start here:
 - [Phase 1 deployment status](docs/PHASE_1_DEPLOYMENT_STATUS.md)
 - [Phase 2A memory UI](docs/PHASE_2A_MEMORY_UI.md)
 - [Saved memory direction context](docs/SAVED_CONTEXT_MEMORY_DIRECTION.md)
+- [Local ChatGPT export](docs/LOCAL_CHAT_EXPORT.md)
 - [Context pack guide](docs/CONTEXT_PACK_GUIDE.md)
 - [Context pack UI guide](docs/CONTEXT_PACK_UI_GUIDE.md)
 - [Copy context for ChatGPT](docs/COPY_CONTEXT_FOR_CHATGPT.md)
