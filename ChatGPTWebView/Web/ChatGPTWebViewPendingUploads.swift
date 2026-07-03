@@ -192,14 +192,9 @@ extension ChatGPTWebViewStore {
         return (value as? Bool) == true
     }
 
-    func hasStartedConversation() async -> Bool {
+    func userMessageCount() async -> Int {
         let script = #"""
-        (() => {
-          const roleMessages = document.querySelectorAll('[data-message-author-role="user"], [data-message-author-role="assistant"]');
-          if (roleMessages.length > 0) return true;
-          const turns = document.querySelectorAll('article[data-testid*="conversation-turn"], [data-testid*="conversation-turn"]');
-          return turns.length > 0;
-        })();
+        (() => document.querySelectorAll('[data-message-author-role="user"]').length)();
         """#
 
         let value = try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
@@ -212,6 +207,8 @@ extension ChatGPTWebViewStore {
             }
         }
 
-        return (value as? Bool) == true
+        if let intValue = value as? Int { return intValue }
+        if let numberValue = value as? NSNumber { return numberValue.intValue }
+        return 0
     }
 }
