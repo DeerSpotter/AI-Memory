@@ -36,17 +36,23 @@ struct ChatGPTTabView: View {
 
             guard let payload else { return }
 
-            UIPasteboard.general.string = payload.composerText
-            appModel.statusMessage = "Opening new chat with saved context. On iOS 16 the Markdown is inserted or copied for paste."
+            if let composerText = payload.composerText, !composerText.isEmpty {
+                UIPasteboard.general.string = composerText
+                appModel.statusMessage = "Opening new chat with saved Markdown context."
 
-            Task { @MainActor in
-                let inserted = await webViewStore.injectComposerText(payload.composerText)
-                if inserted {
-                    appModel.statusMessage = "Saved Markdown was inserted into the new chat. Review and send."
-                } else {
-                    appModel.statusMessage = "Saved Markdown copied. Paste it into the new chat."
+                Task { @MainActor in
+                    let inserted = await webViewStore.injectComposerText(composerText)
+                    if inserted {
+                        appModel.statusMessage = "Saved Markdown was inserted into the new chat. Review and send."
+                    } else {
+                        appModel.statusMessage = "Saved Markdown copied. Paste it into the new chat."
+                    }
                 }
-                await webViewStore.triggerPendingAttachmentPicker()
+            } else if !payload.fileURLs.isEmpty {
+                appModel.statusMessage = "Opening new chat. Tap +, choose Files, then select the exported file from ChatGPT Memory."
+                Task { @MainActor in
+                    await webViewStore.triggerPendingAttachmentPicker()
+                }
             }
         }
     }
