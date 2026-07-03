@@ -109,6 +109,7 @@ struct ChatGPTTabView: View {
             webViewStore.preparePendingUploadURLs(urls)
             let opened = await webViewStore.activateComposerAndOpenAttachmentPicker()
             if opened {
+                pendingAttachFileURLs = []
                 appModel.statusMessage = "Attach menu opened. Choose Files, then select the exported PDF or Markdown from ChatGPT Memory."
             } else {
                 appModel.statusMessage = "Could not open attach yet. Wait for ChatGPT to finish loading, then tap Attach Files again."
