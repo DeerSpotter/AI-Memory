@@ -150,32 +150,107 @@ extension ChatGPTWebViewStore {
     }
 
     func injectComposerText(_ text: String) async -> Bool {
-        let escaped = text
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "`", with: "\\`")
-            .replacingOccurrences(of: "$", with: "\\$")
+        let encodedText: String
+        if let data = try? JSONSerialization.data(withJSONObject: [text], options: []),
+           let json = String(data: data, encoding: .utf8) {
+            encodedText = json
+        } else {
+            encodedText = "[\"\"]"
+        }
 
         try? await Task.sleep(nanoseconds: 300_000_000)
 
         let script = """
         (() => {
-          const text = `\(escaped)`;
-          const targets = Array.from(document.querySelectorAll('textarea, [contenteditable="true"]'));
-          const input = targets.find((el) => {
+          const text = \(encodedText)[0];
+
+          const selectors = [
+            'textarea',
+            '[contenteditable="true"]',
+            '.ProseMirror',
+            '[data-testid="composer"] [contenteditable="true"]',
+            '[data-testid="composer"] textarea',
+            'form textarea',
+            'form [contenteditable="true"]'
+          ];
+
+          const visible = (el) => {
+            if (!el) return false;
             const r = el.getBoundingClientRect();
-            return r.width > 100 && r.height > 20;
-          });
-          if (!input) return false;
-          input.focus();
-          if (input.tagName === 'TEXTAREA') {
-            input.value = text;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-            return true;
+            const style = window.getComputedStyle(el);
+            return r.width > 80 && r.height > 12 && style.visibility !== 'hidden' && style.display !== 'none';
+          };
+
+          const findComposer = () => {
+            for (const selector of selectors) {
+              const candidates = Array.from(document.querySelectorAll(selector)).filter(visible);
+              if (candidates.length) return candidates[candidates.length - 1];
+            }
+            return null;
+          };
+
+          const tapLikeUser = (el) => {
+            const r = el.getBoundingClientRect();
+            const x = Math.max(1, Math.floor(r.left + Math.min(r.width - 1, 24)));
+            const y = Math.max(1, Math.floor(r.top + Math.min(r.height - 1, Math.max(12, r.height / 2))));
+            const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+            el.scrollIntoView({ block: 'center', inline: 'nearest' });
+            el.dispatchEvent(new MouseEvent('mouseover', opts));
+            el.dispatchEvent(new MouseEvent('mousedown', opts));
+            el.dispatchEvent(new MouseEvent('mouseup', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
+            el.focus?.({ preventScroll: true });
+          };
+
+          const setNativeValue = (el, value) => {
+            const proto = Object.getPrototypeOf(el);
+            const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+            if (descriptor && descriptor.set) {
+              descriptor.set.call(el, value);
+            } else {
+              el.value = value;
+            }
+          };
+
+          const insertInto = (input) => {
+            tapLikeUser(input);
+
+            if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
+              setNativeValue(input, text);
+              input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              return input.value === text || input.value.length > 0;
+            }
+
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(input);
+            range.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            const inserted = document.execCommand && document.execCommand('insertText', false, text);
+            if (!inserted) {
+              input.textContent = text;
+              input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+            }
+
+            return (input.innerText || input.textContent || '').length > 0;
+          };
+
+          const directInput = findComposer();
+          if (directInput && insertInto(directInput)) return true;
+
+          const composerShell = Array.from(document.querySelectorAll('form, [data-testid="composer"], main'))
+            .reverse()
+            .find(visible);
+          if (composerShell) {
+            tapLikeUser(composerShell);
+            const retryInput = findComposer();
+            if (retryInput && insertInto(retryInput)) return true;
           }
-          input.textContent = text;
-          input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-          return true;
+
+          return false;
         })();
         """
 
