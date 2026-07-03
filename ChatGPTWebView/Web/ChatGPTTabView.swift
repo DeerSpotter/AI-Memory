@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct ChatGPTTabView: View {
     @EnvironmentObject private var appModel: AppModel
@@ -37,24 +36,11 @@ struct ChatGPTTabView: View {
             .padding(.top, 12)
             .padding(.horizontal, 12)
         }
+        .onAppear {
+            handlePendingMemoryStart()
+        }
         .onChange(of: appModel.openChatGPTTabRequestID) { _ in
-            let payload = PendingLocalMemoryAttachment.consumePayload()
-            webViewStore.startNewChatWithPendingUploadURLs(payload?.fileURLs ?? [])
-
-            guard let payload else { return }
-
-            if let composerText = payload.composerText, !composerText.isEmpty {
-                UIPasteboard.general.string = composerText
-                pendingPasteContextText = composerText
-                pendingPasteContextID = UUID()
-                appModel.statusMessage = "Saved Markdown copied. Tap Paste Context to insert it, or continue without it."
-                watchForConversationStartWithoutPaste(pendingPasteContextID)
-            } else if !payload.fileURLs.isEmpty {
-                appModel.statusMessage = "Opening new chat. Tap +, choose Files, then select the exported file from ChatGPT Memory."
-                Task { @MainActor in
-                    await webViewStore.triggerPendingAttachmentPicker()
-                }
-            }
+            handlePendingMemoryStart()
         }
     }
 
@@ -64,10 +50,28 @@ struct ChatGPTTabView: View {
         return isSavingContext ? "Saving" : "Save Context"
     }
 
+    private func handlePendingMemoryStart() {
+        let payload = PendingLocalMemoryAttachment.consumePayload()
+        webViewStore.startNewChatWithPendingUploadURLs(payload?.fileURLs ?? [])
+
+        guard let payload else { return }
+
+        if let composerText = payload.composerText, !composerText.isEmpty {
+            pendingPasteContextText = composerText
+            pendingPasteContextID = UUID()
+            appModel.statusMessage = "Saved Markdown is ready. Tap Paste Context to insert it, or continue without it."
+            watchForConversationStartWithoutPaste(pendingPasteContextID)
+        } else if !payload.fileURLs.isEmpty {
+            appModel.statusMessage = "Opening new chat. Tap +, choose Files, then select the exported file from ChatGPT Memory."
+            Task { @MainActor in
+                await webViewStore.triggerPendingAttachmentPicker()
+            }
+        }
+    }
+
     private func pastePendingContext(_ text: String) {
         guard !isPastingContext else { return }
         isPastingContext = true
-        UIPasteboard.general.string = text
 
         Task { @MainActor in
             defer { isPastingContext = false }
@@ -77,17 +81,21 @@ struct ChatGPTTabView: View {
                 pendingPasteContextID = UUID()
                 appModel.statusMessage = "Pasted saved context. Review and send."
             } else {
-                appModel.statusMessage = "Context copied. Tap the ChatGPT composer and paste it manually."
+                appModel.statusMessage = "Could not paste yet. Wait for ChatGPT to finish loading, then tap Paste Context again."
             }
         }
     }
 
     private func watchForConversationStartWithoutPaste(_ id: UUID) {
         Task { @MainActor in
-            for _ in 0..<90 {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            let baselineUserMessages = await webViewStore.userMessageCount()
+
+            for _ in 0..<120 {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard pendingPasteContextID == id, pendingPasteContextText != nil else { return }
-                if await webViewStore.hasStartedConversation() {
+                let currentUserMessages = await webViewStore.userMessageCount()
+                if currentUserMessages > baselineUserMessages {
                     pendingPasteContextText = nil
                     pendingPasteContextID = UUID()
                     appModel.statusMessage = "Continuing without pasted Memory context. Save Context is available again."
