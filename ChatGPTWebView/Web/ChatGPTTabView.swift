@@ -1,10 +1,14 @@
 import SwiftUI
-import UIKit
 
 struct ChatGPTTabView: View {
     @EnvironmentObject private var appModel: AppModel
     @StateObject private var webViewStore = ChatGPTWebViewStore()
     @State private var isSavingContext = false
+    @State private var isPastingContext = false
+    @State private var isAttachingFiles = false
+    @State private var pendingPasteContextText: String?
+    @State private var pendingAttachFileURLs: [URL] = []
+    @State private var pendingPasteContextID = UUID()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -13,11 +17,17 @@ struct ChatGPTTabView: View {
                 .ignoresSafeArea(.keyboard, edges: .bottom)
 
             HStack(spacing: 10) {
-                Button(isSavingContext ? "Saving" : "Save Context") {
-                    saveCurrentChatToMemory()
+                Button(contextButtonTitle) {
+                    if let pendingPasteContextText {
+                        pastePendingContext(pendingPasteContextText)
+                    } else if !pendingAttachFileURLs.isEmpty {
+                        attachPendingFiles(pendingAttachFileURLs)
+                    } else {
+                        saveCurrentChatToMemory()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isSavingContext)
+                .disabled(isSavingContext || isPastingContext || isAttachingFiles)
 
                 CircleIconButton(systemImage: "stop.circle", accessibilityLabel: "Stop ChatGPT activity", accessibilityHint: "Stops current WebView activity") {
                     webViewStore.stopCurrentActivity()
@@ -30,23 +40,91 @@ struct ChatGPTTabView: View {
             .padding(.top, 12)
             .padding(.horizontal, 12)
         }
+        .onAppear {
+            handlePendingMemoryStart()
+        }
         .onChange(of: appModel.openChatGPTTabRequestID) { _ in
-            let payload = PendingLocalMemoryAttachment.consumePayload()
-            webViewStore.startNewChatWithPendingUploadURLs(payload?.fileURLs ?? [])
+            handlePendingMemoryStart()
+        }
+    }
 
-            guard let payload else { return }
+    private var contextButtonTitle: String {
+        if isPastingContext { return "Pasting" }
+        if isAttachingFiles { return "Attaching" }
+        if pendingPasteContextText != nil { return "Paste Context" }
+        if !pendingAttachFileURLs.isEmpty { return "Attach Files" }
+        return isSavingContext ? "Saving" : "Save Context"
+    }
 
-            UIPasteboard.general.string = payload.composerText
-            appModel.statusMessage = "Opening new chat with saved context. On iOS 16 the Markdown is inserted or copied for paste."
+    private func handlePendingMemoryStart() {
+        let payload = PendingLocalMemoryAttachment.consumePayload()
+        webViewStore.startNewChatWithPendingUploadURLs(payload?.fileURLs ?? [])
 
-            Task { @MainActor in
-                let inserted = await webViewStore.injectComposerText(payload.composerText)
-                if inserted {
-                    appModel.statusMessage = "Saved Markdown was inserted into the new chat. Review and send."
-                } else {
-                    appModel.statusMessage = "Saved Markdown copied. Paste it into the new chat."
+        guard let payload else { return }
+
+        if let composerText = payload.composerText, !composerText.isEmpty {
+            pendingPasteContextText = composerText
+            pendingAttachFileURLs = []
+            pendingPasteContextID = UUID()
+            appModel.statusMessage = "Saved Markdown is ready. Tap Paste Context to insert it, or continue without it."
+            watchForConversationStartWithoutPaste(pendingPasteContextID)
+        } else if !payload.fileURLs.isEmpty {
+            pendingAttachFileURLs = payload.fileURLs
+            pendingPasteContextText = nil
+            appModel.statusMessage = "Files are ready. Tap Attach Files to attach from app Memory."
+        }
+    }
+
+    private func pastePendingContext(_ text: String) {
+        guard !isPastingContext else { return }
+        isPastingContext = true
+
+        Task { @MainActor in
+            defer { isPastingContext = false }
+            let inserted = await webViewStore.injectComposerText(text)
+            if inserted {
+                pendingPasteContextText = nil
+                pendingPasteContextID = UUID()
+                appModel.statusMessage = "Pasted saved context. Review and send."
+            } else {
+                appModel.statusMessage = "Could not paste yet. Wait for ChatGPT to finish loading, then tap Paste Context again."
+            }
+        }
+    }
+
+    private func attachPendingFiles(_ urls: [URL]) {
+        guard !isAttachingFiles else { return }
+        isAttachingFiles = true
+        webViewStore.preparePendingUploadURLs(urls)
+
+        Task { @MainActor in
+            defer { isAttachingFiles = false }
+            let memoryAttachWorked = await webViewStore.injectFilesIntoChatGPTUpload(urls)
+            pendingAttachFileURLs = []
+
+            if memoryAttachWorked {
+                appModel.statusMessage = "Attached files from app Memory. Review the new chat before sending."
+            } else {
+                appModel.statusMessage = "Direct memory attach was attempted. If the file card did not appear, return to Memory and try again."
+            }
+        }
+    }
+
+    private func watchForConversationStartWithoutPaste(_ id: UUID) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            let baselineUserMessages = await webViewStore.userMessageCount()
+
+            for _ in 0..<120 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard pendingPasteContextID == id, pendingPasteContextText != nil else { return }
+                let currentUserMessages = await webViewStore.userMessageCount()
+                if currentUserMessages > baselineUserMessages {
+                    pendingPasteContextText = nil
+                    pendingPasteContextID = UUID()
+                    appModel.statusMessage = "Continuing without pasted Memory context. Save Context is available again."
+                    return
                 }
-                await webViewStore.triggerPendingAttachmentPicker()
             }
         }
     }

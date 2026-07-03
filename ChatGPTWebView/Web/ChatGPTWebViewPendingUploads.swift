@@ -98,6 +98,10 @@ extension SecureChatGPTWebViewCoordinator {
 
 @MainActor
 extension ChatGPTWebViewStore {
+    func preparePendingUploadURLs(_ urls: [URL]) {
+        coordinator.setPendingUploadURLs(urls)
+    }
+
     func startNewChatWithPendingUploadURLs(_ urls: [URL]) {
         coordinator.setPendingUploadURLs(urls)
         startNewChat()
@@ -105,40 +109,125 @@ extension ChatGPTWebViewStore {
 
     func triggerPendingAttachmentPicker() async {
         guard coordinator.hasPendingUploadURLs() else { return }
-        guard #available(iOS 18.4, *) else { return }
-
         try? await Task.sleep(nanoseconds: 1_200_000_000)
-
         guard coordinator.hasPendingUploadURLs() else { return }
+        _ = await activateComposerAndOpenAttachmentPicker()
+    }
 
+    func activateComposerAndOpenAttachmentPicker() async -> Bool {
         let script = #"""
         (() => {
+          const visible = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            const style = window.getComputedStyle(el);
+            return r.width > 12 && r.height > 12 && style.visibility !== 'hidden' && style.display !== 'none';
+          };
+
+          const tapLikeUser = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            const x = Math.max(1, Math.floor(r.left + Math.min(Math.max(r.width - 1, 1), Math.max(18, r.width / 2))));
+            const y = Math.max(1, Math.floor(r.top + Math.min(Math.max(r.height - 1, 1), Math.max(12, r.height / 2))));
+            const mouse = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+            const pointer = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y };
+            el.scrollIntoView({ block: 'center', inline: 'nearest' });
+            try { el.dispatchEvent(new PointerEvent('pointerover', pointer)); } catch (_) {}
+            try { el.dispatchEvent(new PointerEvent('pointerdown', pointer)); } catch (_) {}
+            el.dispatchEvent(new MouseEvent('mouseover', mouse));
+            el.dispatchEvent(new MouseEvent('mousedown', mouse));
+            el.dispatchEvent(new MouseEvent('mouseup', mouse));
+            try { el.dispatchEvent(new PointerEvent('pointerup', pointer)); } catch (_) {}
+            el.dispatchEvent(new MouseEvent('click', mouse));
+            el.focus?.({ preventScroll: true });
+            return true;
+          };
+
+          const composerSelectors = [
+            'textarea',
+            '[contenteditable="true"]',
+            '.ProseMirror',
+            '[data-testid="composer"] [contenteditable="true"]',
+            '[data-testid="composer"] textarea',
+            'form textarea',
+            'form [contenteditable="true"]'
+          ];
+
+          const findComposer = () => {
+            for (const selector of composerSelectors) {
+              const candidates = Array.from(document.querySelectorAll(selector)).filter(visible);
+              if (candidates.length) return candidates[candidates.length - 1];
+            }
+            return null;
+          };
+
+          const composer = findComposer();
+          const composerRect = composer?.getBoundingClientRect?.() || null;
+          if (composer) {
+            tapLikeUser(composer);
+          } else {
+            const shell = Array.from(document.querySelectorAll('form, [data-testid="composer"], main')).reverse().find(visible);
+            if (shell) tapLikeUser(shell);
+          }
+
+          const labelFor = (candidate) => [
+            candidate.innerText,
+            candidate.textContent,
+            candidate.getAttribute('aria-label'),
+            candidate.getAttribute('title'),
+            candidate.getAttribute('data-testid')
+          ].filter(Boolean).join(' ').trim().toLowerCase();
+
+          const attachScore = (candidate) => {
+            const label = labelFor(candidate);
+            let score = 0;
+            if (label.includes('attach')) score += 100;
+            if (label.includes('upload')) score += 100;
+            if (label.includes('file')) score += 80;
+            if (label.includes('add')) score += 40;
+            if (label === '+' || label.includes('plus')) score += 40;
+            if (!score) return -1;
+            const r = candidate.getBoundingClientRect();
+            if (composerRect) {
+              score -= Math.min(80, Math.abs(r.top - composerRect.top) / 4);
+              score -= Math.min(40, Math.abs(r.left - composerRect.left) / 8);
+            }
+            if (r.top > window.innerHeight * 0.55) score += 20;
+            return score;
+          };
+
+          const buttons = Array.from(document.querySelectorAll('button,[role="button"],a,input[type="button"]')).filter(visible);
+          const attachButton = buttons
+            .map((candidate) => ({ candidate, score: attachScore(candidate) }))
+            .filter((item) => item.score >= 0)
+            .sort((a, b) => b.score - a.score)[0]?.candidate;
+
+          if (attachButton) {
+            tapLikeUser(attachButton);
+            setTimeout(() => {
+              const menuItem = Array.from(document.querySelectorAll('button,[role="button"],a,[role="menuitem"]'))
+                .filter(visible)
+                .find((candidate) => {
+                  const label = labelFor(candidate);
+                  return label.includes('upload') || label.includes('file') || label.includes('computer') || label.includes('photo');
+                });
+              if (menuItem) tapLikeUser(menuItem);
+              setTimeout(() => document.querySelector('input[type="file"]')?.click(), 250);
+            }, 250);
+            return true;
+          }
+
           const input = document.querySelector('input[type="file"]');
           if (input) {
             input.click();
-            return 'clicked-file-input';
+            return true;
           }
 
-          const buttons = Array.from(document.querySelectorAll('button,[role="button"]'));
-          const button = buttons.find((candidate) => {
-            const label = [candidate.innerText, candidate.getAttribute('aria-label'), candidate.getAttribute('title')]
-              .filter(Boolean)
-              .join(' ')
-              .toLowerCase();
-            return label.includes('attach') || label.includes('upload') || label.includes('file') || label.includes('add');
-          });
-
-          if (button) {
-            button.click();
-            setTimeout(() => document.querySelector('input[type="file"]')?.click(), 350);
-            return 'clicked-attach-button';
-          }
-
-          return 'no-file-control-found';
+          return false;
         })();
         """#
 
-        _ = try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+        let value = try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
             webView.evaluateJavaScript(script) { value, error in
                 if let error {
                     continuation.resume(throwing: error)
@@ -147,35 +236,182 @@ extension ChatGPTWebViewStore {
                 }
             }
         }
+
+        return (value as? Bool) == true
     }
 
-    func injectComposerText(_ text: String) async -> Bool {
-        let escaped = text
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "`", with: "\\`")
-            .replacingOccurrences(of: "$", with: "\\$")
+    func injectFilesIntoChatGPTUpload(_ urls: [URL]) async -> Bool {
+        struct FileRecord: Encodable {
+            let name: String
+            let mime: String
+            let base64: String
+        }
 
-        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        let maxTotalBytes = 18_000_000
+        var totalBytes = 0
+        var records: [FileRecord] = []
+
+        for url in urls {
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let data = try? Data(contentsOf: url) else { continue }
+            totalBytes += data.count
+            guard totalBytes <= maxTotalBytes else { return false }
+
+            let ext = url.pathExtension
+            let mime = UTType(filenameExtension: ext)?.preferredMIMEType ?? "application/octet-stream"
+            records.append(FileRecord(name: url.lastPathComponent, mime: mime, base64: data.base64EncodedString()))
+        }
+
+        guard !records.isEmpty,
+              let jsonData = try? JSONEncoder().encode(records),
+              let json = String(data: jsonData, encoding: .utf8) else {
+            return false
+        }
 
         let script = """
-        (() => {
-          const text = `\(escaped)`;
-          const targets = Array.from(document.querySelectorAll('textarea, [contenteditable="true"]'));
-          const input = targets.find((el) => {
+        (async () => {
+          const records = \(json);
+          if (!records.length) return false;
+
+          const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          const visible = (el) => {
+            if (!el) return false;
             const r = el.getBoundingClientRect();
-            return r.width > 100 && r.height > 20;
-          });
-          if (!input) return false;
-          input.focus();
-          if (input.tagName === 'TEXTAREA') {
-            input.value = text;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
+            const style = window.getComputedStyle(el);
+            return r.width > 12 && r.height > 12 && style.visibility !== 'hidden' && style.display !== 'none';
+          };
+
+          const tapLikeUser = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            const x = Math.max(1, Math.floor(r.left + Math.min(Math.max(r.width - 1, 1), Math.max(18, r.width / 2))));
+            const y = Math.max(1, Math.floor(r.top + Math.min(Math.max(r.height - 1, 1), Math.max(12, r.height / 2))));
+            const mouse = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+            const pointer = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y };
+            el.scrollIntoView({ block: 'center', inline: 'nearest' });
+            try { el.dispatchEvent(new PointerEvent('pointerover', pointer)); } catch (_) {}
+            try { el.dispatchEvent(new PointerEvent('pointerdown', pointer)); } catch (_) {}
+            el.dispatchEvent(new MouseEvent('mouseover', mouse));
+            el.dispatchEvent(new MouseEvent('mousedown', mouse));
+            el.dispatchEvent(new MouseEvent('mouseup', mouse));
+            try { el.dispatchEvent(new PointerEvent('pointerup', pointer)); } catch (_) {}
+            el.dispatchEvent(new MouseEvent('click', mouse));
+            el.focus?.({ preventScroll: true });
             return true;
+          };
+
+          const closeTransientMenus = () => {
+            const escDown = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true });
+            const escUp = new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true });
+            document.dispatchEvent(escDown);
+            window.dispatchEvent(escDown);
+            document.body?.dispatchEvent(escDown);
+            document.dispatchEvent(escUp);
+            window.dispatchEvent(escUp);
+            document.body?.dispatchEvent(escUp);
+
+            const composer = findComposer();
+            if (composer) {
+              tapLikeUser(composer);
+            } else {
+              document.body?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: 8, clientY: 8 }));
+            }
+          };
+
+          const findComposer = () => {
+            const selectors = [
+              'textarea',
+              '[contenteditable="true"]',
+              '.ProseMirror',
+              '[data-testid="composer"] [contenteditable="true"]',
+              '[data-testid="composer"] textarea',
+              'form textarea',
+              'form [contenteditable="true"]'
+            ];
+            for (const selector of selectors) {
+              const candidates = Array.from(document.querySelectorAll(selector)).filter(visible);
+              if (candidates.length) return candidates[candidates.length - 1];
+            }
+            return null;
+          };
+
+          const makeFiles = () => {
+            const files = records.map((record) => {
+              const binary = atob(record.base64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              return new File([bytes], record.name, { type: record.mime || 'application/octet-stream' });
+            });
+            return files;
+          };
+
+          const makeTransfer = (files) => {
+            let transfer = null;
+            try { transfer = new DataTransfer(); } catch (_) {}
+            if (!transfer) {
+              try { transfer = new ClipboardEvent('paste').clipboardData; } catch (_) {}
+            }
+            if (!transfer) return null;
+            for (const file of files) transfer.items.add(file);
+            return transfer;
+          };
+
+          const files = makeFiles();
+          const transfer = makeTransfer(files);
+          if (!transfer || !transfer.files || transfer.files.length === 0) return false;
+
+          const composer = findComposer();
+          if (composer) tapLikeUser(composer);
+          await wait(200);
+
+          const input = Array.from(document.querySelectorAll('input[type="file"]')).reverse()[0];
+          if (input) {
+            try {
+              input.files = transfer.files;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              if (input.files && input.files.length > 0) {
+                closeTransientMenus();
+                await wait(250);
+                return true;
+              }
+            } catch (_) {}
           }
-          input.textContent = text;
-          input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-          return true;
+
+          const dropTargets = [
+            composer,
+            document.querySelector('form'),
+            document.querySelector('[data-testid="composer"]'),
+            document.querySelector('main'),
+            document.body
+          ].filter(Boolean);
+
+          for (const target of dropTargets) {
+            try {
+              target.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: transfer }));
+            } catch (_) {}
+            try {
+              target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+            } catch (_) {}
+            try {
+              target.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+              target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+              target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+            } catch (_) {}
+          }
+
+          await wait(600);
+          const attachmentHints = Array.from(document.querySelectorAll('[data-testid], [aria-label], a, button, div, span'))
+            .map((el) => [el.innerText, el.textContent, el.getAttribute('aria-label'), el.getAttribute('data-testid')].filter(Boolean).join(' '))
+            .join(' ')
+            .toLowerCase();
+          const success = records.some((record) => attachmentHints.includes(record.name.toLowerCase())) || false;
+          if (success) {
+            closeTransientMenus();
+            await wait(250);
+          }
+          return success;
         })();
         """
 
@@ -190,5 +426,143 @@ extension ChatGPTWebViewStore {
         }
 
         return (value as? Bool) == true
+    }
+
+    func injectComposerText(_ text: String) async -> Bool {
+        let encodedText: String
+        if let data = try? JSONSerialization.data(withJSONObject: [text], options: []),
+           let json = String(data: data, encoding: .utf8) {
+            encodedText = json
+        } else {
+            encodedText = "[\"\"]"
+        }
+
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        let script = """
+        (() => {
+          const text = \(encodedText)[0];
+
+          const selectors = [
+            'textarea',
+            '[contenteditable="true"]',
+            '.ProseMirror',
+            '[data-testid="composer"] [contenteditable="true"]',
+            '[data-testid="composer"] textarea',
+            'form textarea',
+            'form [contenteditable="true"]'
+          ];
+
+          const visible = (el) => {
+            if (!el) return false;
+            const r = el.getBoundingClientRect();
+            const style = window.getComputedStyle(el);
+            return r.width > 80 && r.height > 12 && style.visibility !== 'hidden' && style.display !== 'none';
+          };
+
+          const findComposer = () => {
+            for (const selector of selectors) {
+              const candidates = Array.from(document.querySelectorAll(selector)).filter(visible);
+              if (candidates.length) return candidates[candidates.length - 1];
+            }
+            return null;
+          };
+
+          const tapLikeUser = (el) => {
+            const r = el.getBoundingClientRect();
+            const x = Math.max(1, Math.floor(r.left + Math.min(r.width - 1, 24)));
+            const y = Math.max(1, Math.floor(r.top + Math.min(r.height - 1, Math.max(12, r.height / 2))));
+            const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+            el.scrollIntoView({ block: 'center', inline: 'nearest' });
+            el.dispatchEvent(new MouseEvent('mouseover', opts));
+            el.dispatchEvent(new MouseEvent('mousedown', opts));
+            el.dispatchEvent(new MouseEvent('mouseup', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
+            el.focus?.({ preventScroll: true });
+          };
+
+          const setNativeValue = (el, value) => {
+            const proto = Object.getPrototypeOf(el);
+            const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+            if (descriptor && descriptor.set) {
+              descriptor.set.call(el, value);
+            } else {
+              el.value = value;
+            }
+          };
+
+          const insertInto = (input) => {
+            tapLikeUser(input);
+
+            if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
+              setNativeValue(input, text);
+              input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              return input.value === text || input.value.length > 0;
+            }
+
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(input);
+            range.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            const inserted = document.execCommand && document.execCommand('insertText', false, text);
+            if (!inserted) {
+              input.textContent = text;
+              input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+            }
+
+            return (input.innerText || input.textContent || '').length > 0;
+          };
+
+          const directInput = findComposer();
+          if (directInput && insertInto(directInput)) return true;
+
+          const composerShell = Array.from(document.querySelectorAll('form, [data-testid="composer"], main'))
+            .reverse()
+            .find(visible);
+          if (composerShell) {
+            tapLikeUser(composerShell);
+            const retryInput = findComposer();
+            if (retryInput && insertInto(retryInput)) return true;
+          }
+
+          return false;
+        })();
+        """
+
+        let value = try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+            webView.evaluateJavaScript(script) { value, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: value)
+                }
+            }
+        }
+
+        return (value as? Bool) == true
+    }
+
+    func userMessageCount() async -> Int {
+        let script = #"""
+        (() => document.querySelectorAll('[data-message-author-role="user"]').length)();
+        """#
+
+        let value = try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+            webView.evaluateJavaScript(script) { value, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: value)
+                }
+            }
+        }
+
+        if let intValue = value as? Int { return intValue }
+        if let numberValue = value as? NSNumber { return numberValue.intValue }
+        return 0
     }
 }
