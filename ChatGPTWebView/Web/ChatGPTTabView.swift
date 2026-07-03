@@ -5,7 +5,9 @@ struct ChatGPTTabView: View {
     @StateObject private var webViewStore = ChatGPTWebViewStore()
     @State private var isSavingContext = false
     @State private var isPastingContext = false
+    @State private var isAttachingFiles = false
     @State private var pendingPasteContextText: String?
+    @State private var pendingAttachFileURLs: [URL] = []
     @State private var pendingPasteContextID = UUID()
 
     var body: some View {
@@ -18,12 +20,14 @@ struct ChatGPTTabView: View {
                 Button(contextButtonTitle) {
                     if let pendingPasteContextText {
                         pastePendingContext(pendingPasteContextText)
+                    } else if !pendingAttachFileURLs.isEmpty {
+                        attachPendingFiles(pendingAttachFileURLs)
                     } else {
                         saveCurrentChatToMemory()
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isSavingContext || isPastingContext)
+                .disabled(isSavingContext || isPastingContext || isAttachingFiles)
 
                 CircleIconButton(systemImage: "stop.circle", accessibilityLabel: "Stop ChatGPT activity", accessibilityHint: "Stops current WebView activity") {
                     webViewStore.stopCurrentActivity()
@@ -46,7 +50,9 @@ struct ChatGPTTabView: View {
 
     private var contextButtonTitle: String {
         if isPastingContext { return "Pasting" }
+        if isAttachingFiles { return "Attaching" }
         if pendingPasteContextText != nil { return "Paste Context" }
+        if !pendingAttachFileURLs.isEmpty { return "Attach Files" }
         return isSavingContext ? "Saving" : "Save Context"
     }
 
@@ -58,14 +64,14 @@ struct ChatGPTTabView: View {
 
         if let composerText = payload.composerText, !composerText.isEmpty {
             pendingPasteContextText = composerText
+            pendingAttachFileURLs = []
             pendingPasteContextID = UUID()
             appModel.statusMessage = "Saved Markdown is ready. Tap Paste Context to insert it, or continue without it."
             watchForConversationStartWithoutPaste(pendingPasteContextID)
         } else if !payload.fileURLs.isEmpty {
-            appModel.statusMessage = "Opening new chat. Tap +, choose Files, then select the exported file from ChatGPT Memory."
-            Task { @MainActor in
-                await webViewStore.triggerPendingAttachmentPicker()
-            }
+            pendingAttachFileURLs = payload.fileURLs
+            pendingPasteContextText = nil
+            appModel.statusMessage = "Files are ready. Tap Attach Files to activate the composer and open ChatGPT file upload."
         }
     }
 
@@ -82,6 +88,22 @@ struct ChatGPTTabView: View {
                 appModel.statusMessage = "Pasted saved context. Review and send."
             } else {
                 appModel.statusMessage = "Could not paste yet. Wait for ChatGPT to finish loading, then tap Paste Context again."
+            }
+        }
+    }
+
+    private func attachPendingFiles(_ urls: [URL]) {
+        guard !isAttachingFiles else { return }
+        isAttachingFiles = true
+        webViewStore.preparePendingUploadURLs(urls)
+
+        Task { @MainActor in
+            defer { isAttachingFiles = false }
+            let opened = await webViewStore.activateComposerAndOpenAttachmentPicker()
+            if opened {
+                appModel.statusMessage = "Attach flow opened. Select the exported PDF or Markdown from ChatGPT Memory."
+            } else {
+                appModel.statusMessage = "Could not open attach yet. Wait for ChatGPT to finish loading, then tap Attach Files again."
             }
         }
     }
