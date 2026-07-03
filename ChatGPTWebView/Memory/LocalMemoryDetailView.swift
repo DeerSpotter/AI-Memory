@@ -117,7 +117,8 @@ struct LocalMemoryDetailView: View {
                 exportedURLs.append(try store.exportMarkdownToFiles(for: entry))
             }
 
-            PendingLocalMemoryAttachment.mark(entry, fileURLs: exportedURLs)
+            let injectMarkdown = !exportPDF && !exportMarkdown
+            PendingLocalMemoryAttachment.mark(entry, fileURLs: exportedURLs, injectMarkdown: injectMarkdown)
             appModel.startNewChat(using: entry)
 
             if exportedURLs.isEmpty {
