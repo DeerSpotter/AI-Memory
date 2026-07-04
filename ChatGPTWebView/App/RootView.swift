@@ -6,13 +6,18 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Group {
-                switch selectedTab {
-                case .chatgpt:
-                    ChatGPTTabView()
-                case .memory:
-                    MemoryTestView()
-                }
+            ZStack {
+                ChatGPTTabView()
+                    .opacity(selectedTab == .chatgpt ? 1 : 0)
+                    .allowsHitTesting(selectedTab == .chatgpt)
+                    .accessibilityHidden(selectedTab != .chatgpt)
+                    .zIndex(selectedTab == .chatgpt ? 1 : 0)
+
+                MemoryTestView()
+                    .opacity(selectedTab == .memory ? 1 : 0)
+                    .allowsHitTesting(selectedTab == .memory)
+                    .accessibilityHidden(selectedTab != .memory)
+                    .zIndex(selectedTab == .memory ? 1 : 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, 34)
