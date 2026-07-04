@@ -34,6 +34,20 @@ final class ChatGPTProfileSessionPool: ObservableObject {
         }
     }
 
+    func setTypingPriority(_ isTyping: Bool, profileID: String) {
+        stores[profileID]?.setTypingPriority(isTyping)
+    }
+
+    func removeSavedProfileSession(profileID: String) async {
+        guard let store = stores.removeValue(forKey: profileID) else {
+            ChatGPTProfileCookieVault().delete(profileID: profileID)
+            ChatGPTProfileBrowserStateVault().delete(profileID: profileID)
+            return
+        }
+
+        await store.removeSavedProfileSession()
+    }
+
     func resetGuest(
         profile: ChatGPTProfile,
         onDetectedDisplayName: @escaping (String, String) -> Void
