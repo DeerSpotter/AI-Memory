@@ -22,6 +22,8 @@ final class ChatGPTWebViewStore: ObservableObject {
     private var didPrepareInitialLoad = false
     private var didDetectDisplayName = false
     private var explicitLogoutDetected = false
+    private var typingPriorityActive = false
+    private var captureDeferredForTyping = false
     private var sessionMutationGeneration = 0
     private var delayedCaptureTask: Task<Void, Never>?
 
@@ -153,8 +155,41 @@ final class ChatGPTWebViewStore: ObservableObject {
         webView.load(URLRequest(url: startURL))
     }
 
+    func setTypingPriority(_ isTyping: Bool) {
+        guard typingPriorityActive != isTyping else { return }
+        typingPriorityActive = isTyping
+
+        if isTyping {
+            if delayedCaptureTask != nil {
+                captureDeferredForTyping = true
+            }
+            delayedCaptureTask?.cancel()
+            delayedCaptureTask = nil
+            return
+        }
+
+        if captureDeferredForTyping {
+            captureDeferredForTyping = false
+            scheduleProfileStateCapture()
+        }
+    }
+
     func persistProfileSession() async {
-        await captureProfileState()
+        await captureProfileState(force: true)
+    }
+
+    func removeSavedProfileSession() async {
+        guard profile.kind == .saved else { return }
+
+        sessionMutationGeneration += 1
+        explicitLogoutDetected = true
+        captureDeferredForTyping = false
+        delayedCaptureTask?.cancel()
+        delayedCaptureTask = nil
+        webView.stopLoading()
+        cookieVault.delete(profileID: profile.id)
+        browserStateVault.delete(profileID: profile.id)
+        await removeAllWebsiteData()
     }
 
     func resetGuestSession() async {
@@ -172,21 +207,41 @@ final class ChatGPTWebViewStore: ObservableObject {
         sessionMutationGeneration += 1
         explicitLogoutDetected = true
         didDetectDisplayName = false
+        captureDeferredForTyping = false
         delayedCaptureTask?.cancel()
+        delayedCaptureTask = nil
         cookieVault.delete(profileID: profile.id)
         browserStateVault.markLoggedOut(profileID: profile.id)
     }
 
     private func scheduleProfileStateCapture() {
         delayedCaptureTask?.cancel()
+
+        guard !typingPriorityActive else {
+            captureDeferredForTyping = true
+            delayedCaptureTask = nil
+            return
+        }
+
         delayedCaptureTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled, let self else { return }
-            await self.captureProfileState()
+
+            guard !self.typingPriorityActive else {
+                self.captureDeferredForTyping = true
+                return
+            }
+
+            await self.captureProfileState(force: false)
         }
     }
 
-    private func captureProfileState() async {
+    private func captureProfileState(force: Bool) async {
+        if typingPriorityActive && !force {
+            captureDeferredForTyping = true
+            return
+        }
+
         var detectedDisplayName: String?
         if !didDetectDisplayName || explicitLogoutDetected {
             detectedDisplayName = await detectCurrentAccountDisplayName()
