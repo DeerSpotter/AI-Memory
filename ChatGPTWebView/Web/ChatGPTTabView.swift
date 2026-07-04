@@ -2,17 +2,20 @@ import SwiftUI
 
 struct ChatGPTTabView: View {
     @EnvironmentObject private var appModel: AppModel
-    @StateObject private var webViewStore = ChatGPTWebViewStore()
+    @EnvironmentObject private var profileManager: ChatGPTProfileManager
+    @StateObject private var sessionPool = ChatGPTProfileSessionPool()
     @State private var isSavingContext = false
     @State private var isPastingContext = false
     @State private var isAttachingFiles = false
     @State private var pendingPasteContextText: String?
     @State private var pendingAttachFileURLs: [URL] = []
     @State private var pendingPasteContextID = UUID()
+    @State private var lastProfileID = ChatGPTProfile.primaryID
 
     var body: some View {
         ZStack(alignment: .top) {
             SecureChatGPTWebView(store: webViewStore)
+                .id(profileManager.activeProfileID)
                 .ignoresSafeArea(.container, edges: .bottom)
                 .ignoresSafeArea(.keyboard, edges: .bottom)
 
@@ -41,11 +44,27 @@ struct ChatGPTTabView: View {
             .padding(.horizontal, 12)
         }
         .onAppear {
+            lastProfileID = profileManager.activeProfileID
+            handleActiveProfileAppearance()
             handlePendingMemoryStart()
+        }
+        .onChange(of: profileManager.activeProfileID) { newProfileID in
+            let previousProfileID = lastProfileID
+            lastProfileID = newProfileID
+            handleProfileChange(from: previousProfileID)
         }
         .onChange(of: appModel.openChatGPTTabRequestID) { _ in
             handlePendingMemoryStart()
         }
+    }
+
+    private var webViewStore: ChatGPTWebViewStore {
+        sessionPool.store(
+            for: profileManager.activeProfile,
+            onDetectedDisplayName: { profileID, displayName in
+                profileManager.updateDetectedDisplayName(displayName, for: profileID)
+            }
+        )
     }
 
     private var contextButtonTitle: String {
@@ -54,6 +73,31 @@ struct ChatGPTTabView: View {
         if pendingPasteContextText != nil { return "Paste Context" }
         if !pendingAttachFileURLs.isEmpty { return "Attach Files" }
         return isSavingContext ? "Saving" : "Save Context"
+    }
+
+    private func handleActiveProfileAppearance() {
+        guard profileManager.activeProfile.kind == .guest else { return }
+        Task { @MainActor in
+            await sessionPool.resetGuest(
+                profile: profileManager.guestProfile,
+                onDetectedDisplayName: { _, _ in }
+            )
+        }
+    }
+
+    private func handleProfileChange(from previousProfileID: String) {
+        let activeProfile = profileManager.activeProfile
+
+        Task { @MainActor in
+            await sessionPool.persistSession(profileID: previousProfileID)
+
+            if activeProfile.kind == .guest {
+                await sessionPool.resetGuest(
+                    profile: activeProfile,
+                    onDetectedDisplayName: { _, _ in }
+                )
+            }
+        }
     }
 
     private func handlePendingMemoryStart() {
