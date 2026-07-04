@@ -3,6 +3,7 @@ import SwiftUI
 struct ChatGPTTabView: View {
     @EnvironmentObject private var appModel: AppModel
     @EnvironmentObject private var profileManager: ChatGPTProfileManager
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var sessionPool = ChatGPTProfileSessionPool()
     @State private var isSavingContext = false
     @State private var isPastingContext = false
@@ -56,6 +57,10 @@ struct ChatGPTTabView: View {
         .onChange(of: appModel.openChatGPTTabRequestID) { _ in
             handlePendingMemoryStart()
         }
+        .onChange(of: scenePhase) { newPhase in
+            guard newPhase == .inactive || newPhase == .background else { return }
+            persistAllLiveProfileSessions()
+        }
     }
 
     private var webViewStore: ChatGPTWebViewStore {
@@ -97,6 +102,12 @@ struct ChatGPTTabView: View {
                     onDetectedDisplayName: { _, _ in }
                 )
             }
+        }
+    }
+
+    private func persistAllLiveProfileSessions() {
+        Task { @MainActor in
+            await sessionPool.persistAllSessions()
         }
     }
 
