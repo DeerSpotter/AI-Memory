@@ -12,7 +12,10 @@ final class ChatGPTProfileSessionPool: ObservableObject {
             return existing
         }
 
+        let loginURL = URL(string: "https://chatgpt.com/auth/login")
+        let initialURL = profile.kind == .saved ? loginURL : nil
         let store = ChatGPTWebViewStore(
+            initialURL: initialURL,
             profile: profile,
             onDetectedDisplayName: onDetectedDisplayName
         )
