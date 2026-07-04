@@ -2,7 +2,10 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
+    @EnvironmentObject private var updateChecker: AppUpdateChecker
+    @Environment(\.openURL) private var openURL
     @State private var selectedTab: AppTab = .chatgpt
+    @State private var isShowingSettings = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -22,10 +25,26 @@ struct RootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, 34)
 
-            CompactBottomSwitcher(selectedTab: $selectedTab)
+            CompactBottomSwitcher(selectedTab: $selectedTab) {
+                isShowingSettings = true
+            }
         }
         .onChange(of: appModel.openChatGPTTabRequestID) { _ in
             selectedTab = .chatgpt
+        }
+        .sheet(isPresented: $isShowingSettings) {
+            SettingsView(updateChecker: updateChecker)
+                .presentationDetents([.medium])
+        }
+        .alert(item: $updateChecker.availableUpdate) { update in
+            Alert(
+                title: Text("Update Available"),
+                message: Text("ChatGPT Memory \(update.version) is available. This IPA was built as version \(update.currentVersion)."),
+                primaryButton: .default(Text("View Release")) {
+                    openURL(update.releaseURL)
+                },
+                secondaryButton: .cancel(Text("Later"))
+            )
         }
     }
 }
@@ -37,6 +56,7 @@ private enum AppTab: Hashable {
 
 private struct CompactBottomSwitcher: View {
     @Binding var selectedTab: AppTab
+    let onSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -55,6 +75,15 @@ private struct CompactBottomSwitcher: View {
             ) {
                 selectedTab = .memory
             }
+
+            Button(action: onSettings) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 44, height: 32)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Settings")
         }
         .frame(height: 34)
         .frame(maxWidth: .infinity)
@@ -83,6 +112,30 @@ private struct CompactTabButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
+    }
+}
+
+private struct SettingsView: View {
+    @ObservedObject var updateChecker: AppUpdateChecker
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Updates") {
+                    Toggle("Check for updates on start", isOn: $updateChecker.checkForUpdatesOnStart)
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 
