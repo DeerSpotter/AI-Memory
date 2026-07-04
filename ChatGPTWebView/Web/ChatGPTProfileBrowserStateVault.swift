@@ -67,7 +67,9 @@ final class ChatGPTProfileBrowserStateVault {
     func lastURL(profileID: String) -> URL? {
         guard let value = load(profileID: profileID).lastURL,
               let url = URL(string: value),
-              url.scheme?.lowercased() == "https" else {
+              url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              host == "chatgpt.com" || host.hasSuffix(".chatgpt.com") || host == "openai.com" || host.hasSuffix(".openai.com") else {
             return nil
         }
         return url
