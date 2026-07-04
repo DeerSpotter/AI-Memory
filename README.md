@@ -6,6 +6,49 @@ A lightweight iOS WebView wrapper for ChatGPT’s web app. Built with Swift and 
 
 This fork is being converted into a trusted, source controlled build path. The upstream release IPA should not be treated as trusted unless that exact IPA is separately inspected.
 
+## Release IPA build provenance
+
+The IPA files attached to this repository's GitHub Releases come from successful GitHub Actions workflow builds.
+
+**GitHub Actions is the build origin. GitHub Releases is the distribution location.**
+
+The Release page does not compile the app. The project release process takes the unsigned IPA produced by the repository workflow in Actions and attaches that workflow output to the corresponding GitHub Release.
+
+The primary source controlled IPA workflow is:
+
+- `.github/workflows/build-source-ios16-ipa.yml`
+- Workflow name: `Build Source iOS 16 IPA`
+
+That workflow:
+
+1. Checks out the repository source.
+2. Shows the Xcode version used by the GitHub hosted macOS runner.
+3. Installs XcodeGen when required.
+4. Generates `ChatGPTWebView.xcodeproj` from `project.yml`.
+5. Archives the app in Release configuration for a generic iOS device.
+6. Builds with code signing disabled.
+7. Packages the archived `.app` inside a `Payload` folder as an unsigned `.ipa`.
+8. Uploads the IPA as a GitHub Actions workflow artifact.
+
+The repository also contains the `Build Unsigned IPA` workflow. That workflow independently detects an available Xcode project or workspace and shared scheme, archives the app without signing, packages the result as an unsigned IPA, and uploads its own Actions artifact.
+
+The expected release path is:
+
+```text
+Source merged into main
+  -> GitHub Actions workflow runs
+  -> IPA build completes successfully
+  -> unsigned IPA is uploaded as a workflow artifact
+  -> that workflow produced IPA is attached to the GitHub Release
+  -> users download the IPA from Releases
+```
+
+This means release IPA assets are expected to be traceable back to a successful build in the repository's Actions history rather than a separate local developer build.
+
+The workflows intentionally set code signing to disabled. Release IPA files produced by these workflows are unsigned and require a compatible install, signing, or sideloading method.
+
+GitHub Actions artifacts are configured with a 14 day retention period. Publishing the workflow produced IPA as a GitHub Release asset provides the longer lived download location for a released version.
+
 ## Current app direction
 
 The app is now focused on two tabs:
@@ -55,7 +98,9 @@ The app source lives under:
 - `AppMemory/`
 - `project.yml`
 
-The build workflow generates the Xcode project from `project.yml` and uploads an unsigned IPA artifact.
+The source controlled build workflow generates the Xcode project from `project.yml`, archives the app without code signing, packages the app as an unsigned IPA, and uploads the result as a GitHub Actions artifact.
+
+For published versions, the IPA attached to the GitHub Release is taken from the successful Actions workflow output for that release source revision.
 
 ## Build Requirements
 
