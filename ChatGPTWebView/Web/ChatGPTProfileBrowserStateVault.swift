@@ -103,7 +103,10 @@ final class ChatGPTProfileBrowserStateVault {
         return url
     }
 
-    func documentStartRestoreScript(profileID: String) -> String? {
+    func documentStartRestoreScript(
+        profileID: String,
+        overwriteExistingValues: Bool = true
+    ) -> String? {
         let state = load(profileID: profileID)
         guard state.sessionStatus != .loggedOut else { return nil }
 
@@ -114,14 +117,21 @@ final class ChatGPTProfileBrowserStateVault {
             return nil
         }
 
+        let shouldOverwrite = overwriteExistingValues ? "true" : "false"
+
         return """
         (() => {
           const statesByOrigin = \(json);
+          const overwriteExistingValues = \(shouldOverwrite);
           try {
             const values = statesByOrigin[window.location.origin];
             if (!values) return;
             for (const [key, value] of Object.entries(values)) {
-              try { window.localStorage.setItem(key, value); } catch (_) {}
+              try {
+                if (overwriteExistingValues || window.localStorage.getItem(key) === null) {
+                  window.localStorage.setItem(key, value);
+                }
+              } catch (_) {}
             }
           } catch (_) {}
         })();
