@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var appModel: AppModel
     @EnvironmentObject private var updateChecker: AppUpdateChecker
+    @EnvironmentObject private var profileManager: ChatGPTProfileManager
     @Environment(\.openURL) private var openURL
     @State private var selectedTab: AppTab = .chatgpt
     @State private var isShowingSettings = false
@@ -25,9 +26,21 @@ struct RootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, 34)
 
-            CompactBottomSwitcher(selectedTab: $selectedTab) {
-                isShowingSettings = true
-            }
+            CompactBottomSwitcher(
+                selectedTab: $selectedTab,
+                profileManager: profileManager,
+                onProfileSelected: { profile in
+                    profileManager.selectProfile(profile)
+                    selectedTab = .chatgpt
+                },
+                onAddLogin: {
+                    _ = profileManager.addLoginProfile()
+                    selectedTab = .chatgpt
+                },
+                onSettings: {
+                    isShowingSettings = true
+                }
+            )
         }
         .onChange(of: appModel.openChatGPTTabRequestID) { _ in
             selectedTab = .chatgpt
@@ -56,6 +69,9 @@ private enum AppTab: Hashable {
 
 private struct CompactBottomSwitcher: View {
     @Binding var selectedTab: AppTab
+    @ObservedObject var profileManager: ChatGPTProfileManager
+    let onProfileSelected: (ChatGPTProfile) -> Void
+    let onAddLogin: () -> Void
     let onSettings: () -> Void
 
     var body: some View {
@@ -76,6 +92,27 @@ private struct CompactBottomSwitcher: View {
                 selectedTab = .memory
             }
 
+            Menu {
+                profileButton(profileManager.primaryProfile, title: primaryProfileTitle)
+                profileButton(profileManager.guestProfile, title: "Guest")
+
+                ForEach(profileManager.savedProfiles) { profile in
+                    profileButton(profile, title: profile.displayName)
+                }
+
+                Divider()
+
+                Button(action: onAddLogin) {
+                    Label("Add Login", systemImage: "plus")
+                }
+            } label: {
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 44, height: 32)
+                    .foregroundColor(.secondary)
+            }
+            .accessibilityLabel("Profiles")
+
             Button(action: onSettings) {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 17, weight: .semibold))
@@ -89,6 +126,25 @@ private struct CompactBottomSwitcher: View {
         .frame(maxWidth: .infinity)
         .background(.ultraThinMaterial)
         .overlay(Rectangle().fill(Color.secondary.opacity(0.16)).frame(height: 0.5), alignment: .top)
+    }
+
+    private var primaryProfileTitle: String {
+        profileManager.primaryDisplayName == "Current User"
+            ? "Current User"
+            : "Current User: \(profileManager.primaryDisplayName)"
+    }
+
+    @ViewBuilder
+    private func profileButton(_ profile: ChatGPTProfile, title: String) -> some View {
+        Button {
+            onProfileSelected(profile)
+        } label: {
+            if profileManager.activeProfileID == profile.id {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
     }
 }
 
