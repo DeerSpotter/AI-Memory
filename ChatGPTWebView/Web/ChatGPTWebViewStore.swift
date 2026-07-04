@@ -4,6 +4,7 @@ import WebKit
 
 @MainActor
 final class ChatGPTWebViewStore: ObservableObject {
+    let provider: AIProvider
     let webView: WKWebView
     let coordinator: SecureChatGPTWebViewCoordinator
 
@@ -16,6 +17,7 @@ final class ChatGPTWebViewStore: ObservableObject {
     private let startURL: URL
     private let initialURL: URL
     private let profile: ChatGPTProfile
+    private let storageProfileID: String
     private let cookieVault: ChatGPTProfileCookieVault
     private let browserStateVault: ChatGPTProfileBrowserStateVault
     private let onDetectedDisplayName: (String, String) -> Void
@@ -30,7 +32,7 @@ final class ChatGPTWebViewStore: ObservableObject {
     private var delayedCaptureTask: Task<Void, Never>?
 
     init(
-        startURL: URL = URL(string: "https://chatgpt.com/")!,
+        provider: AIProvider = AIProviderID.chatGPT.provider,
         initialURL: URL? = nil,
         profile: ChatGPTProfile = ChatGPTProfile(
             id: ChatGPTProfile.primaryID,
@@ -41,23 +43,40 @@ final class ChatGPTWebViewStore: ObservableObject {
         browserStateVault: ChatGPTProfileBrowserStateVault = ChatGPTProfileBrowserStateVault(),
         onDetectedDisplayName: @escaping (String, String) -> Void = { _, _ in }
     ) {
-        self.startURL = startURL
+        self.provider = provider
+        self.startURL = provider.startURL
         self.profile = profile
+        self.storageProfileID = profile.storageID(for: provider.id)
         self.cookieVault = cookieVault
         self.browserStateVault = browserStateVault
         self.onDetectedDisplayName = onDetectedDisplayName
-        self.coordinator = SecureChatGPTWebViewCoordinator()
+
+        if provider.id == .chatGPT, profile.kind != .guest {
+            cookieVault.migrateLegacyProfileIfNeeded(
+                legacyProfileID: profile.id,
+                profileID: storageProfileID
+            )
+            browserStateVault.migrateLegacyProfileIfNeeded(
+                legacyProfileID: profile.id,
+                profileID: storageProfileID
+            )
+        }
+
+        self.coordinator = SecureChatGPTWebViewCoordinator(provider: provider)
 
         let isPersistentProfile = profile.kind != .guest
         let shouldRestorePersistentSession = !isPersistentProfile
-            || browserStateVault.shouldRestoreSession(profileID: profile.id)
+            || browserStateVault.shouldRestoreSession(profileID: storageProfileID)
         self.explicitLogoutDetected = isPersistentProfile && !shouldRestorePersistentSession
         self.logoutNavigationGeneration = self.explicitLogoutDetected ? 0 : nil
 
         let restoredURL = isPersistentProfile && shouldRestorePersistentSession
-            ? browserStateVault.lastURL(profileID: profile.id)
+            ? browserStateVault.lastURL(
+                profileID: storageProfileID,
+                allowedHostSuffixes: provider.authenticatedHostSuffixes
+            )
             : nil
-        self.initialURL = restoredURL ?? initialURL ?? startURL
+        self.initialURL = restoredURL ?? initialURL ?? provider.startURL
 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = profile.kind == .primary ? .default() : .nonPersistent()
@@ -78,7 +97,7 @@ final class ChatGPTWebViewStore: ObservableObject {
 
             if shouldRestorePersistentSession,
                let restoreScript = browserStateVault.documentStartRestoreScript(
-                profileID: profile.id,
+                profileID: storageProfileID,
                 overwriteExistingValues: profile.kind == .saved
                ) {
                 configuration.userContentController.addUserScript(
@@ -197,8 +216,14 @@ final class ChatGPTWebViewStore: ObservableObject {
         delayedCaptureTask?.cancel()
         delayedCaptureTask = nil
         webView.stopLoading()
-        cookieVault.delete(profileID: profile.id)
-        browserStateVault.delete(profileID: profile.id)
+        cookieVault.delete(profileID: storageProfileID)
+        browserStateVault.delete(profileID: storageProfileID)
+
+        if provider.id == .chatGPT {
+            cookieVault.delete(profileID: profile.id)
+            browserStateVault.delete(profileID: profile.id)
+        }
+
         await removeAllWebsiteData()
     }
 
@@ -221,8 +246,8 @@ final class ChatGPTWebViewStore: ObservableObject {
         captureDeferredForTyping = false
         delayedCaptureTask?.cancel()
         delayedCaptureTask = nil
-        cookieVault.delete(profileID: profile.id)
-        browserStateVault.markLoggedOut(profileID: profile.id)
+        cookieVault.delete(profileID: storageProfileID)
+        browserStateVault.markLoggedOut(profileID: storageProfileID)
     }
 
     private func scheduleProfileStateCapture() {
@@ -261,16 +286,16 @@ final class ChatGPTWebViewStore: ObservableObject {
         if explicitLogoutDetected {
             let logoutGeneration = logoutNavigationGeneration ?? navigationGeneration
             guard navigationGeneration > logoutGeneration,
-                  isAuthenticatedChatGPTURL(webView.url),
+                  provider.isAuthenticatedContentURL(webView.url),
                   let detectedDisplayName,
                   !detectedDisplayName.isEmpty else {
-                cookieVault.delete(profileID: profile.id)
-                browserStateVault.markLoggedOut(profileID: profile.id)
+                cookieVault.delete(profileID: storageProfileID)
+                browserStateVault.markLoggedOut(profileID: storageProfileID)
                 return
             }
 
             sessionMutationGeneration += 1
-            browserStateVault.markActive(profileID: profile.id)
+            browserStateVault.markActive(profileID: storageProfileID)
             explicitLogoutDetected = false
             logoutNavigationGeneration = nil
             didDetectDisplayName = true
@@ -280,7 +305,7 @@ final class ChatGPTWebViewStore: ObservableObject {
         let captureGeneration = sessionMutationGeneration
 
         if profile.kind != .guest {
-            let cookies = await allCookies()
+            let cookies = await providerCookies()
             guard captureGeneration == sessionMutationGeneration, !explicitLogoutDetected else {
                 return
             }
@@ -290,13 +315,15 @@ final class ChatGPTWebViewStore: ObservableObject {
                 return
             }
 
-            cookieVault.save(cookies, profileID: profile.id)
+            cookieVault.save(cookies, profileID: storageProfileID)
             if let browserState {
                 browserStateVault.save(
                     origin: browserState.origin,
                     localStorage: browserState.localStorage,
-                    lastURL: browserState.lastURL,
-                    profileID: profile.id
+                    lastURL: provider.isAuthenticatedContentURL(webView.url)
+                        ? browserState.lastURL
+                        : nil,
+                    profileID: storageProfileID
                 )
             }
         }
@@ -321,16 +348,30 @@ final class ChatGPTWebViewStore: ObservableObject {
     }
 
     private func restorePersistentProfileCookies() async {
-        guard browserStateVault.shouldRestoreSession(profileID: profile.id) else {
+        guard browserStateVault.shouldRestoreSession(profileID: storageProfileID) else {
             return
         }
 
-        let existingCookies = await allCookies()
+        let existingCookies = await providerCookies()
         let existingCookieIDs = Set(existingCookies.map(cookieIdentity))
-        let savedCookies = cookieVault.load(profileID: profile.id)
+        let savedCookies = cookieVault.load(profileID: storageProfileID)
+            .filter(isProviderCookie)
 
         for cookie in savedCookies where !existingCookieIDs.contains(cookieIdentity(cookie)) {
             await setCookie(cookie)
+        }
+    }
+
+    private func providerCookies() async -> [HTTPCookie] {
+        await allCookies().filter(isProviderCookie)
+    }
+
+    private func isProviderCookie(_ cookie: HTTPCookie) -> Bool {
+        let host = cookie.domain
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        return provider.persistentCookieHostSuffixes.contains { suffix in
+            host == suffix || host.hasSuffix("." + suffix)
         }
     }
 
@@ -392,17 +433,6 @@ final class ChatGPTWebViewStore: ObservableObject {
                 continuation.resume()
             }
         }
-    }
-
-    private func isAuthenticatedChatGPTURL(_ url: URL?) -> Bool {
-        guard let url,
-              url.scheme?.lowercased() == "https",
-              let host = url.host?.lowercased(),
-              host == "chatgpt.com" || host.hasSuffix(".chatgpt.com") else {
-            return false
-        }
-
-        return !url.path.lowercased().hasPrefix("/auth")
     }
 
     private func detectCurrentAccountDisplayName() async -> String? {
@@ -496,30 +526,13 @@ final class SecureChatGPTWebViewCoordinator: NSObject, WKNavigationDelegate, WKU
     var navigationDidFinishHandler: ((WKWebView) -> Void)?
     var logoutDetectedHandler: (() -> Void)?
 
-    private let allowedHostSuffixes = [
-        "chatgpt.com",
-        "openai.com",
-        "oaistatic.com",
-        "oaiusercontent.com",
-        "auth0.com",
-        "google.com",
-        "gstatic.com",
-        "googleusercontent.com",
-        "apple.com",
-        "icloud.com",
-        "microsoft.com",
-        "microsoftonline.com",
-        "live.com",
-        "msauth.net"
-    ]
-
+    private let allowedHostSuffixes: [String]
     private let internalSchemes = [
         "https",
         "about",
         "blob",
         "data"
     ]
-
     private let externalSchemes = [
         "http",
         "https",
@@ -527,6 +540,11 @@ final class SecureChatGPTWebViewCoordinator: NSObject, WKNavigationDelegate, WKU
         "tel",
         "sms"
     ]
+
+    init(provider: AIProvider = AIProviderID.chatGPT.provider) {
+        self.allowedHostSuffixes = provider.allowedHostSuffixes
+        super.init()
+    }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == Self.profileLogoutMessageName else { return }
