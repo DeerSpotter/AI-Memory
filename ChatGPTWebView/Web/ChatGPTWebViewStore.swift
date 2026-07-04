@@ -620,12 +620,10 @@ final class SecureChatGPTWebViewCoordinator: NSObject, WKNavigationDelegate, WKU
             return false
         }
 
-        switch navigationAction.navigationType {
-        case .linkActivated, .formSubmitted, .other:
-            return true
-        default:
-            return navigationAction.targetFrame == nil
-        }
+        // WebKit reports server redirects and script-driven navigations as `.other`.
+        // Never launch Safari for those automatically. Only a direct user link tap may
+        // cross the provider WebView boundary and open externally.
+        return navigationAction.navigationType == .linkActivated
     }
 
     private func openExternally(_ url: URL) {
