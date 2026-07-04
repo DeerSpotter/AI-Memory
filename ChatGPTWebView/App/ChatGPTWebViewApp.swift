@@ -14,7 +14,7 @@ struct ChatGPTWebViewApp: App {
                     await appModel.restoreSession()
                 }
                 .task {
-                    await updateChecker.checkForUpdate()
+                    await updateChecker.checkForUpdateOnStartup()
                 }
                 .onOpenURL { url in
                     appModel.handleOpenURL(url)
