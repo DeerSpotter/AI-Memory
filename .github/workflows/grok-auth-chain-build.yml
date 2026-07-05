@@ -6,7 +6,7 @@ on:
       - codex/multi-ai-architecture
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   grok-auth-chain:
@@ -15,13 +15,25 @@ jobs:
     steps:
       - name: Checkout branch
         uses: actions/checkout@v4
+        with:
+          ref: codex/multi-ai-architecture
 
-      - name: Parse Swift sources
+      - name: Apply Grok auth-chain patch
         shell: bash
         run: |
           set -euo pipefail
+          git apply --check scripts/grok-auth-chain.patch
+          git apply scripts/grok-auth-chain.patch
+          python3 -c 'from pathlib import Path; p=Path("project.yml"); s=p.read_text(); assert "CURRENT_PROJECT_VERSION: \"37\"" in s or "CURRENT_PROJECT_VERSION: \"38\"" in s; p.write_text(s.replace("CURRENT_PROJECT_VERSION: \"37\"", "CURRENT_PROJECT_VERSION: \"38\"", 1))'
           swiftc -frontend -parse ChatGPTWebView/Web/ChatGPTWebViewStore.swift
           swiftc -frontend -parse ChatGPTWebView/App/AIProvider.swift
+
+      - name: Commit build 38 source
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: Replace Grok popup auth with auth-chain navigation
+          branch: codex/multi-ai-architecture
+          file_pattern: ChatGPTWebView/Web/ChatGPTWebViewStore.swift project.yml
 
       - name: Install XcodeGen
         shell: bash
@@ -65,11 +77,11 @@ jobs:
           rm -rf build/Payload
           mkdir -p build/Payload
           cp -R "$APP_PATH" build/Payload/
-          (cd build && zip -qry ChatGPT-WebView-grok-auth-chain.ipa Payload)
+          (cd build && zip -qry ChatGPT-WebView-grok-auth-chain-build38.ipa Payload)
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ChatGPT-WebView-grok-auth-chain
-          path: build/ChatGPT-WebView-grok-auth-chain.ipa
+          name: ChatGPT-WebView-grok-auth-chain-build38
+          path: build/ChatGPT-WebView-grok-auth-chain-build38.ipa
           retention-days: 14
