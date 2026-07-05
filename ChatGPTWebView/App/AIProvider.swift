@@ -138,14 +138,26 @@ struct AIProvider: Identifiable, Hashable {
                 "x.com",
                 "twitter.com",
                 "twimg.com",
+                "grokipedia.com",
+                "grokusercontent.com",
                 "google.com",
                 "gstatic.com",
                 "googleusercontent.com",
+                "googleapis.com",
+                "accounts.youtube.com",
                 "apple.com",
                 "icloud.com",
                 "challenges.cloudflare.com"
             ],
-            persistentCookieHostSuffixes: ["grok.com", "x.ai", "x.com", "twitter.com", "twimg.com"],
+            persistentCookieHostSuffixes: [
+                "grok.com",
+                "x.ai",
+                "x.com",
+                "twitter.com",
+                "twimg.com",
+                "grokipedia.com",
+                "grokusercontent.com"
+            ],
             authenticatedHostSuffixes: ["grok.com"],
             unauthenticatedPathPrefixes: ["/login", "/signin", "/sign-in", "/auth"]
         )
