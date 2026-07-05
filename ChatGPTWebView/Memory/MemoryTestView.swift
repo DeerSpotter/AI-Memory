@@ -158,7 +158,8 @@ struct MemoryTestView: View {
     }
 
     private func revisionLabel(for entry: LocalMemoryEntry) -> String {
-        "\(entry.revisionCount) \(entry.revisionCount == 1 ? \"revision\" : \"revisions\")"
+        let noun = entry.revisionCount == 1 ? "revision" : "revisions"
+        return "\(entry.revisionCount) \(noun)"
     }
 
     private func toggleSelection(_ entry: LocalMemoryEntry) {
