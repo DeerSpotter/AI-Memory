@@ -608,14 +608,18 @@ final class SecureChatGPTWebViewCoordinator: NSObject, WKNavigationDelegate, WKU
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if provider.id == .grok {
+            let webViewID = ObjectIdentifier(webView)
+
+            if isGoogleCheckCookieURL(webView.url) {
+                resumeGrokGoogleCheckCookieIfNeeded(in: webView)
+            } else {
+                grokGoogleCheckCookieRecoveryAttempted.remove(webViewID)
+            }
+        }
+
         if isAuthPopup(webView) {
             trackAuthPopupNavigation(webView, url: webView.url)
-
-            if provider.id == .grok,
-               isGoogleCheckCookieURL(webView.url) {
-                resumeGrokGoogleCheckCookieIfNeeded(in: webView)
-                return
-            }
 
             if provider.id == .grok,
                grokPopupsThatLeftProvider.contains(ObjectIdentifier(webView)),
@@ -774,7 +778,7 @@ final class SecureChatGPTWebViewCoordinator: NSObject, WKNavigationDelegate, WKU
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self, weak webView] in
             guard let self,
                   let webView,
-                  self.isAuthPopup(webView),
+                  (webView === self.mainWebView || self.isAuthPopup(webView)),
                   self.isGoogleCheckCookieURL(webView.url),
                   webView.url == checkCookieURL,
                   !webView.isLoading,
