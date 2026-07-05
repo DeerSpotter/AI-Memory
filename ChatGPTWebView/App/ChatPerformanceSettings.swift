@@ -8,7 +8,7 @@ struct ChatPerformanceConfiguration: Equatable {
 
     static let disabled = ChatPerformanceConfiguration(
         isEnabled: false,
-        visibleMessageLimit: 20,
+        visibleMessageLimit: 5,
         enabledProviderIDs: []
     )
 
@@ -62,7 +62,7 @@ final class ChatPerformanceSettings: ObservableObject {
         }
 
         let storedLimit = userDefaults.integer(forKey: Self.visibleMessageLimitKey)
-        self.visibleMessageLimit = Self.normalizedVisibleMessageLimit(storedLimit == 0 ? 20 : storedLimit)
+        self.visibleMessageLimit = Self.normalizedVisibleMessageLimit(storedLimit == 0 ? 5 : storedLimit)
 
         if let storedProviderIDs = userDefaults.stringArray(forKey: Self.enabledProviderIDsKey) {
             self.enabledProviderIDs = Set(storedProviderIDs.compactMap(AIProviderID.init(rawValue:)))
