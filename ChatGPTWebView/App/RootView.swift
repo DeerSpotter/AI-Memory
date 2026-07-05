@@ -7,6 +7,7 @@ struct RootView: View {
     @EnvironmentObject private var profileManager: ChatGPTProfileManager
     @EnvironmentObject private var profileSessionPool: ChatGPTProfileSessionPool
     @Environment(\.openURL) private var openURL
+    @AppStorage("developerModeEnabled") private var developerModeEnabled = false
     @State private var selectedTab: AppTab = .assistant
     @State private var isShowingProfiles = false
     @State private var isShowingSettings = false
@@ -25,6 +26,11 @@ struct RootView: View {
                     .allowsHitTesting(selectedTab == .memory)
                     .accessibilityHidden(selectedTab != .memory)
                     .zIndex(selectedTab == .memory ? 1 : 0)
+
+                if developerModeEnabled && selectedTab == .developer {
+                    DeveloperSourcesView()
+                        .zIndex(2)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.bottom, 34)
@@ -67,6 +73,7 @@ struct RootView: View {
             CompactBottomSwitcher(
                 selectedTab: $selectedTab,
                 provider: providerManager.activeProvider,
+                developerModeEnabled: developerModeEnabled,
                 onProfiles: {
                     isShowingProfiles.toggle()
                 },
@@ -80,6 +87,11 @@ struct RootView: View {
         .onChange(of: appModel.openChatGPTTabRequestID) { _ in
             selectedTab = .assistant
             isShowingProfiles = false
+        }
+        .onChange(of: developerModeEnabled) { isEnabled in
+            if !isEnabled && selectedTab == .developer {
+                selectedTab = .assistant
+            }
         }
         .sheet(isPresented: $isShowingSettings) {
             SettingsView(updateChecker: updateChecker)
@@ -115,11 +127,13 @@ struct RootView: View {
 private enum AppTab: Hashable {
     case assistant
     case memory
+    case developer
 }
 
 private struct CompactBottomSwitcher: View {
     @Binding var selectedTab: AppTab
     let provider: AIProvider
+    let developerModeEnabled: Bool
     let onProfiles: () -> Void
     let onSettings: () -> Void
 
@@ -139,6 +153,16 @@ private struct CompactBottomSwitcher: View {
                 isSelected: selectedTab == .memory
             ) {
                 selectedTab = .memory
+            }
+
+            if developerModeEnabled {
+                CompactTabButton(
+                    title: "Dev",
+                    systemImage: "chevron.left.forwardslash.chevron.right",
+                    isSelected: selectedTab == .developer
+                ) {
+                    selectedTab = .developer
+                }
             }
 
             Button(action: onProfiles) {
@@ -326,6 +350,7 @@ private struct SettingsView: View {
     @EnvironmentObject private var providerManager: AIProviderManager
     @EnvironmentObject private var launchSettings: MemoryLaunchSettings
     @EnvironmentObject private var chatPerformanceSettings: ChatPerformanceSettings
+    @AppStorage("developerModeEnabled") private var developerModeEnabled = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -412,6 +437,16 @@ private struct SettingsView: View {
                             Text(format.displayName).tag(format)
                         }
                     }
+                }
+
+                Section {
+                    Toggle(isOn: $developerModeEnabled) {
+                        Label("Developer Mode", systemImage: "hammer.fill")
+                    }
+                } header: {
+                    Text("Developer")
+                } footer: {
+                    Text("Adds a Dev tab with an on-demand Sources inspector. No source indexing runs while Developer Mode is off. Leaving the Dev tab releases the indexed source text.")
                 }
 
                 Section("Updates") {
