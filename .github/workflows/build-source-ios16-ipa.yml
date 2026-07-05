@@ -44,69 +44,63 @@ jobs:
         run: |
           from pathlib import Path
 
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              if old not in text:
+                  raise SystemExit(f"Expected {label} was not found")
+              return text.replace(old, new, 1)
+
+          def update_section(text: str, start: str, end: str, old: str, new: str, label: str) -> str:
+              start_index = text.find(start)
+              if start_index < 0:
+                  raise SystemExit(f"Expected {label} section start was not found")
+              end_index = text.find(end, start_index)
+              if end_index < 0:
+                  raise SystemExit(f"Expected {label} section end was not found")
+              section = text[start_index:end_index]
+              if old not in section:
+                  raise SystemExit(f"Expected {label} section pattern was not found")
+              section = section.replace(old, new, 1)
+              return text[:start_index] + section + text[end_index:]
+
           store_path = Path("ChatGPTWebView/Web/ChatGPTWebViewStore.swift")
           store = store_path.read_text()
 
-          old_config = '''        let configuration = WKWebViewConfiguration()
-          configuration.websiteDataStore = profile.kind == .primary ? .default() : .nonPersistent()
-          configuration.allowsInlineMediaPlayback = true
+          config_line = "        configuration.allowsInlineMediaPlayback = true\n"
+          config_replacement = config_line + (
+              "        if provider.id == .claude || provider.id == .grok {\n"
+              "            configuration.preferences.javaScriptCanOpenWindowsAutomatically = true\n"
+              "        }\n"
+          )
+          store = replace_once(store, config_line, config_replacement, "inline media configuration line")
 
-          if isPersistentProfile {
-          '''
-          new_config = '''        let configuration = WKWebViewConfiguration()
-          configuration.websiteDataStore = profile.kind == .primary ? .default() : .nonPersistent()
-          configuration.allowsInlineMediaPlayback = true
-          if provider.id == .claude || provider.id == .grok {
-              configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-          }
+          attach_anchor = "        self.webView = webView\n\n        coordinator.navigationDidFinishHandler = { [weak self] _ in\n"
+          attach_replacement = (
+              "        self.webView = webView\n\n"
+              "        coordinator.providerAuthenticationDidCompleteHandler = { [weak self] in\n"
+              "            Task { @MainActor [weak self] in\n"
+              "                self?.handleProviderAuthenticationConfirmed()\n"
+              "            }\n"
+              "        }\n"
+              "        coordinator.attachMainWebView(webView)\n\n"
+              "        coordinator.navigationDidFinishHandler = { [weak self] _ in\n"
+          )
+          store = replace_once(store, attach_anchor, attach_replacement, "coordinator attachment anchor")
 
-          if isPersistentProfile {
-          '''
-          if old_config not in store:
-              raise SystemExit("Expected WKWebView configuration block was not found")
-          store = store.replace(old_config, new_config, 1)
-
-          old_attach = '''        webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
-          self.webView = webView
-
-          coordinator.navigationDidFinishHandler = { [weak self] _ in
-          '''
-          new_attach = '''        webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
-          self.webView = webView
-
-          coordinator.providerAuthenticationDidCompleteHandler = { [weak self] in
-              Task { @MainActor [weak self] in
-                  self?.handleProviderAuthenticationConfirmed()
-              }
-          }
-          coordinator.attachMainWebView(webView)
-
-          coordinator.navigationDidFinishHandler = { [weak self] _ in
-          '''
-          if old_attach not in store:
-              raise SystemExit("Expected coordinator attach block was not found")
-          store = store.replace(old_attach, new_attach, 1)
-
-          method_anchor = '''    private func handleExplicitLogoutDetected() {
-          '''
-          auth_method = '''    private func handleProviderAuthenticationConfirmed() {
-              explicitLogoutDetected = false
-              logoutNavigationGeneration = nil
-              didDetectDisplayName = false
-
-              if profile.kind != .guest {
-                  sessionMutationGeneration += 1
-                  browserStateVault.markActive(profileID: storageProfileID)
-              }
-
-              scheduleProfileStateCapture()
-          }
-
-          private func handleExplicitLogoutDetected() {
-          '''
-          if method_anchor not in store:
-              raise SystemExit("Expected logout handler anchor was not found")
-          store = store.replace(method_anchor, auth_method, 1)
+          logout_anchor = "    private func handleExplicitLogoutDetected() {\n"
+          auth_method = (
+              "    private func handleProviderAuthenticationConfirmed() {\n"
+              "        explicitLogoutDetected = false\n"
+              "        logoutNavigationGeneration = nil\n"
+              "        didDetectDisplayName = false\n\n"
+              "        if profile.kind != .guest {\n"
+              "            sessionMutationGeneration += 1\n"
+              "            browserStateVault.markActive(profileID: storageProfileID)\n"
+              "        }\n\n"
+              "        scheduleProfileStateCapture()\n"
+              "    }\n\n"
+              + logout_anchor
+          )
+          store = replace_once(store, logout_anchor, auth_method, "logout handler anchor")
 
           coordinator_marker = "final class SecureChatGPTWebViewCoordinator"
           if coordinator_marker not in store:
@@ -470,56 +464,42 @@ jobs:
           provider_path = Path("ChatGPTWebView/App/AIProvider.swift")
           provider = provider_path.read_text()
 
-          old_auth_guard = '''        let path = url.path.lowercased()
-          return !unauthenticatedPathPrefixes.contains { path.hasPrefix($0) }
-          '''
-          new_auth_guard = '''        if id == .claude, host != "claude.ai" {
-              return false
-          }
+          path_line = "        let path = url.path.lowercased()\n"
+          auth_guard = (
+              "        if id == .claude, host != \"claude.ai\" {\n"
+              "            return false\n"
+              "        }\n\n"
+              + path_line
+          )
+          provider = replace_once(provider, path_line, auth_guard, "authenticated URL path line")
 
-          let path = url.path.lowercased()
-          return !unauthenticatedPathPrefixes.contains { path.hasPrefix($0) }
-          '''
-          if old_auth_guard not in provider:
-              raise SystemExit("Expected authenticated URL path guard was not found")
-          provider = provider.replace(old_auth_guard, new_auth_guard, 1)
-
-          old_claude_auth_hosts = '''                "microsoftonline.com",
-                  "live.com"
-              ],
-          '''
-          new_claude_auth_hosts = '''                "microsoftonline.com",
-                  "live.com",
-                  "challenges.cloudflare.com"
-              ],
-          '''
-          if old_claude_auth_hosts not in provider:
-              raise SystemExit("Expected Claude host block was not found")
-          provider = provider.replace(old_claude_auth_hosts, new_claude_auth_hosts, 1)
-
-          old_grok_auth_hosts = '''                "apple.com",
-                  "icloud.com"
-              ],
-              persistentCookieHostSuffixes: ["grok.com", "x.ai", "x.com", "twitter.com", "twimg.com"],
-          '''
-          new_grok_auth_hosts = '''                "apple.com",
-                  "icloud.com",
-                  "challenges.cloudflare.com"
-              ],
-              persistentCookieHostSuffixes: ["grok.com", "x.ai", "x.com", "twitter.com", "twimg.com"],
-          '''
-          if old_grok_auth_hosts not in provider:
-              raise SystemExit("Expected Grok host block was not found")
-          provider = provider.replace(old_grok_auth_hosts, new_grok_auth_hosts, 1)
+          provider = update_section(
+              provider,
+              "        .claude: AIProvider(",
+              "        .gemini: AIProvider(",
+              '                "live.com"\n',
+              '                "live.com",\n                "challenges.cloudflare.com"\n',
+              "Claude allowed hosts"
+          )
+          provider = update_section(
+              provider,
+              "        .grok: AIProvider(",
+              "    ]\n}",
+              '                "icloud.com"\n',
+              '                "icloud.com",\n                "challenges.cloudflare.com"\n',
+              "Grok allowed hosts"
+          )
           provider_path.write_text(provider)
 
           project_path = Path("project.yml")
           project = project_path.read_text()
-          old_build = 'CURRENT_PROJECT_VERSION: "28"'
-          new_build = 'CURRENT_PROJECT_VERSION: "29"'
-          if old_build not in project:
-              raise SystemExit("Expected build 28 was not found")
-          project_path.write_text(project.replace(old_build, new_build, 1))
+          project = replace_once(
+              project,
+              'CURRENT_PROJECT_VERSION: "28"',
+              'CURRENT_PROJECT_VERSION: "29"',
+              "build 28 version line"
+          )
+          project_path.write_text(project)
 
       - name: Verify patch shape
         shell: bash
@@ -539,7 +519,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout HEAD^ -- .github/workflows/build-source-ios16-ipa.yml
+          git checkout 45f0cd2d12a5cb8fc61d25966a5a3e00f10b4216 -- .github/workflows/build-source-ios16-ipa.yml
           git rm -f .github/workflows/patch-provider-oauth-popups.yml
           git add ChatGPTWebView/Web/ChatGPTWebViewStore.swift ChatGPTWebView/App/AIProvider.swift project.yml .github/workflows/build-source-ios16-ipa.yml
           git commit -m "Preserve provider OAuth popup sessions"
