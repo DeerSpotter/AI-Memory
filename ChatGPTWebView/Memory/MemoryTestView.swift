@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MemoryTestView: View {
     @EnvironmentObject private var appModel: AppModel
@@ -6,6 +7,8 @@ struct MemoryTestView: View {
     @State private var selectedSection = MemorySection.all
     @State private var isSelecting = false
     @State private var isExportingAll = false
+    @State private var isImporting = false
+    @State private var isShowingImportPicker = false
     @State private var selectedEntryIDs = Set<UUID>()
     @State private var launchRequest: MemoryLaunchRequest?
     @State private var exportShareItem: MemoryExportShareItem?
@@ -41,17 +44,28 @@ struct MemoryTestView: View {
             .navigationTitle("Memory")
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button {
-                        exportAllMemories()
+                    Menu {
+                        Button {
+                            exportAllMemories()
+                        } label: {
+                            Label("Export All Memories", systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(appModel.localMemoryEntries.isEmpty)
+
+                        Button {
+                            isShowingImportPicker = true
+                        } label: {
+                            Label("Import Memory ZIP", systemImage: "square.and.arrow.down")
+                        }
                     } label: {
-                        if isExportingAll {
+                        if isExportingAll || isImporting {
                             ProgressView()
                         } else {
-                            Image(systemName: "square.and.arrow.up")
+                            Image(systemName: "archivebox")
                         }
                     }
-                    .disabled(appModel.localMemoryEntries.isEmpty || isExportingAll)
-                    .accessibilityLabel("Export all Memories as ZIP")
+                    .disabled(isExportingAll || isImporting)
+                    .accessibilityLabel("Memory import and export")
 
                     Button {
                         appModel.reloadLocalMemory()
@@ -93,6 +107,19 @@ struct MemoryTestView: View {
         }
         .sheet(item: $exportShareItem) { item in
             MemoryExportShareSheet(url: item.url)
+        }
+        .fileImporter(
+            isPresented: $isShowingImportPicker,
+            allowedContentTypes: [.zip],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                importMemoryArchive(url)
+            case .failure(let error):
+                appModel.statusMessage = "Memory import failed: \(error.localizedDescription)"
+            }
         }
         .onAppear {
             appModel.reloadLocalMemory()
@@ -197,6 +224,31 @@ struct MemoryTestView: View {
                 appModel.statusMessage = "Memory ZIP export is ready to share or save to Files."
             } catch {
                 appModel.statusMessage = "Memory export failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func importMemoryArchive(_ url: URL) {
+        guard !isImporting else { return }
+        isImporting = true
+        appModel.statusMessage = "Importing ContextPort Memory ZIP..."
+
+        Task { @MainActor in
+            defer { isImporting = false }
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    let isAccessing = url.startAccessingSecurityScopedResource()
+                    defer {
+                        if isAccessing {
+                            url.stopAccessingSecurityScopedResource()
+                        }
+                    }
+                    return try MemoryImportArchiveReader().importArchive(at: url)
+                }.value
+                appModel.reloadLocalMemory()
+                appModel.statusMessage = result.message
+            } catch {
+                appModel.statusMessage = "Memory import failed: \(error.localizedDescription)"
             }
         }
     }
