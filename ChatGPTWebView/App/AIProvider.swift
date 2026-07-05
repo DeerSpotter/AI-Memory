@@ -82,7 +82,7 @@ struct AIProvider: Identifiable, Hashable {
             id: .claude,
             displayName: "Claude",
             systemImage: "text.bubble.fill",
-            startURL: URL(string: "https://claude.ai/")!,
+            startURL: URL(string: "https://claude.ai/new")!,
             loginURL: URL(string: "https://claude.ai/login")!,
             allowedHostSuffixes: [
                 "claude.ai",
@@ -101,7 +101,7 @@ struct AIProvider: Identifiable, Hashable {
             ],
             persistentCookieHostSuffixes: ["claude.ai", "claude.com", "anthropic.com", "workos.com"],
             authenticatedHostSuffixes: ["claude.ai"],
-            unauthenticatedPathPrefixes: ["/login", "/auth", "/oauth"]
+            unauthenticatedPathPrefixes: ["/login", "/auth", "/oauth", "/help", "/support"]
         ),
         .gemini: AIProvider(
             id: .gemini,
@@ -126,7 +126,7 @@ struct AIProvider: Identifiable, Hashable {
             displayName: "Grok",
             systemImage: "bolt.fill",
             startURL: URL(string: "https://grok.com/")!,
-            loginURL: URL(string: "https://grok.com/")!,
+            loginURL: URL(string: "https://grok.com/sign-in")!,
             allowedHostSuffixes: [
                 "grok.com",
                 "x.ai",
