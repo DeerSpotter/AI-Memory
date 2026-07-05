@@ -1,10 +1,19 @@
-# ChatGPT WebView for iOS 16
+# ContextPort
 
-A lightweight iOS WebView AI memory shell built with Swift and WKWebView. The app keeps local conversation Memory while supporting provider scoped web sessions for ChatGPT, Claude, Gemini, and Grok.
+**Take your context with you.**
 
-## Current trust position
+ContextPort is a lightweight iOS app for carrying conversation context between ChatGPT, Claude, Gemini, and Grok. It keeps provider and account sessions isolated while preserving one shared, device local Memory that can move with you between AI providers.
 
-This fork is being converted into a trusted, source controlled build path. The upstream release IPA should not be treated as trusted unless that exact IPA is separately inspected.
+```text
+ChatGPT
+  -> Save Context
+  -> Memory
+  -> Switch provider
+  -> Claude / Gemini / Grok
+  -> Continue with the same context
+```
+
+The AI can change. Your context does not have to.
 
 ## Release IPA build provenance
 
@@ -12,12 +21,12 @@ The IPA files attached to this repository's GitHub Releases come from successful
 
 **GitHub Actions is the build origin. GitHub Releases is the distribution location.**
 
-The Release page does not compile the app. The project release process takes the unsigned IPA produced by the repository workflow in Actions and attaches that workflow output to the corresponding GitHub Release.
+The Release page does not compile the app. The release process takes the unsigned IPA produced by the repository workflow in Actions and attaches that workflow output to the corresponding GitHub Release.
 
 The primary source controlled IPA workflow is:
 
 - `.github/workflows/build-source-ios16-ipa.yml`
-- Workflow name: `Build Source iOS 16 IPA`
+- Workflow name: `Build ContextPort Source iOS 16 IPA`
 
 That workflow:
 
@@ -25,76 +34,76 @@ That workflow:
 2. Shows the Xcode version used by the GitHub hosted macOS runner.
 3. Installs XcodeGen when required.
 4. Generates `ChatGPTWebView.xcodeproj` from `project.yml`.
-5. Archives the app in Release configuration for a generic iOS device.
+5. Archives ContextPort in Release configuration for a generic iOS device.
 6. Builds with code signing disabled.
-7. Packages the archived `.app` inside a `Payload` folder as an unsigned `.ipa`.
-8. Uploads the IPA as a GitHub Actions workflow artifact.
+7. Packages the archived `.app` inside a `Payload` folder as `ContextPort-source-ios16-unsigned.ipa`.
+8. Uploads the IPA as the `ContextPort-source-ios16-unsigned-ipa` Actions artifact.
 
-The repository also contains the `Build Unsigned IPA` workflow. That workflow independently detects an available Xcode project or workspace and shared scheme, archives the app without signing, packages the result as an unsigned IPA, and uploads its own Actions artifact.
+The repository also contains the `Build ContextPort Unsigned IPA` workflow. It independently detects an available Xcode project or workspace and shared scheme, archives the app without signing, and packages `ContextPort-ios16-unsigned.ipa`.
 
 The expected release path is:
 
 ```text
 Source merged into main
   -> GitHub Actions workflow runs
-  -> IPA build completes successfully
+  -> ContextPort IPA build completes successfully
   -> unsigned IPA is uploaded as a workflow artifact
-  -> that workflow produced IPA is attached to the GitHub Release
-  -> users download the IPA from Releases
+  -> workflow produced IPA is attached to the GitHub Release
+  -> users download ContextPort from Releases
 ```
 
-This means release IPA assets are expected to be traceable back to a successful build in the repository's Actions history rather than a separate local developer build.
+Release IPA assets are expected to be traceable to a successful build in the repository's Actions history rather than a separate local developer build.
 
-The workflows intentionally set code signing to disabled. Release IPA files produced by these workflows are unsigned and require a compatible install, signing, or sideloading method.
+The workflows intentionally disable code signing. Release IPA files require a compatible install, signing, or sideloading method.
 
 GitHub Actions artifacts are configured with a 14 day retention period. Publishing the workflow produced IPA as a GitHub Release asset provides the longer lived download location for a released version.
 
-## Current app direction
+## What ContextPort does
 
-The app keeps the lightweight two-tab experience:
+ContextPort keeps a lightweight two tab experience:
 
 - the currently selected AI provider
 - `Memory`
 
 The compact person button opens one combined AI and profile popup. The top strip selects ChatGPT, Claude, Gemini, or Grok. The rows below select Current User, Guest, or a saved login for that provider.
 
-The `Save Context` button extracts the current rendered conversation, creates both Markdown and PDF, and stores both inside the app Memory vault under the conversation title.
+The `Save Context` button extracts the current rendered conversation, creates both Markdown and PDF, and stores both inside the local Memory vault under the conversation title.
 
-The Memory tab remains intentionally simple. It shows saved chat names only. Tap a name to open the saved chat memory, view the PDF, view the Markdown, or start a new chat from that saved memory. Swipe left on a saved chat name to delete it.
+The Memory tab shows saved chat names. Tap a saved chat to view its PDF, view its Markdown, or start a new chat using that saved context with the currently active AI provider.
 
 ## Features
 
 - ChatGPT, Claude, Gemini, and Grok provider catalog
 - Provider scoped Current User, Guest, and saved login profiles
-- Independent provider/profile WebView sessions
+- Independent provider and profile WebView sessions
 - Persistent Current User and saved login recovery
 - Session only Guest behavior per provider
-- Small `x` removal control for saved logins
-- Shared app wide local Memory
-- Safari 16+ User-Agent spoofing
+- Shared device local Memory across all AI providers
+- Save Context conversation capture
+- Rendered conversation extraction into Markdown
+- PDF rendering from exported Markdown
+- Saved chat detail view with PDF and Markdown
+- Direct in Memory Paste Context and file attachment bridge
+- Grok auth chain handling for Google, xAI, and Grok login redirects
+- Claude dedicated OAuth child WebView handling
+- Safari 16+ User-Agent compatibility
 - Mic input support
 - Dark mode support
 - Stop and refresh controls
-- Save Context button near the active AI controls
-- Rendered conversation extraction into Markdown
-- PDF rendering from exported Markdown
-- App Memory tab with saved chat names
-- Saved chat detail screen with PDF and Markdown
-- Direct in memory Paste Context and file attachment bridge
 - Swipe left deletion for saved chats
 - TrollStore compatibility
-- Manual or Xcode install
+- Manual or Xcode installation
 
 ## Multi AI session model
 
 ```text
-Shared local Memory
+Shared device local Memory
   -> Provider
       -> Profile
           -> WebView Session
 ```
 
-Provider and account identity are intentionally separate.
+Provider identity and account identity are separate.
 
 Session and browser recovery storage is namespaced as:
 
@@ -102,51 +111,77 @@ Session and browser recovery storage is namespaced as:
 <provider>::<profile>
 ```
 
+Examples:
+
+```text
+chatgpt::primary
+claude::primary
+gemini::guest
+grok::<saved-profile>
+```
+
 This prevents provider sessions from colliding on common profile IDs such as `primary` and `guest`.
 
-Existing ChatGPT 2.2.2 profile metadata, Keychain cookies, and browser state are migrated into the new ChatGPT namespace on first use.
+Existing ChatGPT 2.2.2 profile metadata, Keychain cookies, and browser state are migrated into the ChatGPT provider namespace on first use.
 
-See `docs/MULTI_AI_ARCHITECTURE.md` for the architecture and migration details.
+See `docs/MULTI_AI_ARCHITECTURE.md` for architecture and migration details.
 
 ## Memory behavior
 
 ```text
-Active AI tab
+Active AI provider
   -> Save Context
   -> extract visible conversation DOM
-  -> write PDF and Markdown into shared app Memory
-  -> Memory tab shows the saved chat title
-  -> tap title to open PDF and Markdown
-  -> Start New Chat opens the currently active AI provider for continuation
+  -> write PDF and Markdown into shared local Memory
+  -> open Memory
+  -> select a saved conversation
+  -> Start New Chat
+  -> continue with the currently active AI provider
 ```
 
 Memory remains device local and app wide. It is not partitioned by provider, profile, or Guest state.
 
-The app does not require Supabase for this flow. Supabase and database experiments may remain in the repository for reference, but they are not part of the active two-tab user experience.
+The core Memory flow does not require Supabase or another cloud memory service.
+
+## Update checks
+
+ContextPort can check the public GitHub `releases/latest` endpoint for this repository and compare the published version against the version embedded in the installed IPA.
+
+The update checker targets:
+
+```text
+DeerSpotter/ContextPort
+```
+
+Update checks are best effort and never block app startup. `Check for updates on start` can be disabled from Settings.
 
 ## Source controlled app
 
-The app source lives under:
+The current source layout still uses the established internal project paths:
 
 - `ChatGPTWebView/`
 - `AppMemory/`
 - `project.yml`
 
-The source controlled build workflow generates the Xcode project from `project.yml`, archives the app without code signing, packages the app as an unsigned IPA, and uploads the result as a GitHub Actions artifact.
+Those internal names are retained for upgrade and build compatibility. The installed product name is ContextPort.
 
-For published versions, the IPA attached to the GitHub Release is taken from the successful Actions workflow output for that release source revision.
+The source controlled build workflow generates the Xcode project from `project.yml`, archives ContextPort without code signing, packages the app as an unsigned IPA, and uploads the result as a GitHub Actions artifact.
 
-## Build Requirements
+For published versions, the IPA attached to the GitHub Release should come from the successful Actions workflow output for that release source revision.
+
+## Build requirements
 
 - Xcode 14+
-- Target iOS 16+
+- iOS 16+
 - Swift 5.0+
 
 ## Installation
 
-1. Open this project in Xcode.
+1. Open the project in Xcode.
 2. Choose your device or simulator.
 3. Run the app.
+
+Unsigned release IPA files require a compatible signing or sideloading method.
 
 ## License
 
