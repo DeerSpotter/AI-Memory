@@ -50,6 +50,9 @@ final class ChatPerformanceSettings: ObservableObject {
     @Published var latestExchangeOnly: Bool {
         didSet {
             userDefaults.set(latestExchangeOnly, forKey: Self.latestExchangeOnlyKey)
+            if latestExchangeOnly, isEnabled {
+                isEnabled = false
+            }
         }
     }
 
