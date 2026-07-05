@@ -1,6 +1,5 @@
 import Foundation
 
-
 enum LocalMemoryStoreError: LocalizedError {
     case emptyMarkdown
     case missingPDF
@@ -331,14 +330,16 @@ final class LocalMemoryStore {
     }
 
     func startNewChatContext(for entry: LocalMemoryEntry) -> String {
-        [
+        let pdfName = entry.pdfFilename ?? "none"
+        let markdownName = entry.markdownFilename ?? "none"
+        return [
             "Start a new chat using this saved ContextPort Memory.",
             "",
             "Title: \(entry.title)",
             "Source: \(entry.source)",
             "Revisions: \(entry.revisionCount)",
-            "PDF: \(entry.pdfFilename ?? \"none\")",
-            "Markdown: \(entry.markdownFilename ?? \"none\")",
+            "PDF: \(pdfName)",
+            "Markdown: \(markdownName)",
             "",
             "Use the saved Memory revision history as context for this new chat."
         ].joined(separator: "\n")
