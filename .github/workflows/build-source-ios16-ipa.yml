@@ -1,4 +1,4 @@
-name: Build Source iOS 16 IPA
+name: Build ContextPort Source iOS 16 IPA
 
 on:
   push:
@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   build-source-ios16-ipa:
-    name: Build source controlled iOS 16 unsigned IPA
+    name: Build ContextPort source controlled iOS 16 unsigned IPA
     runs-on: macos-latest
 
     steps:
@@ -77,7 +77,7 @@ jobs:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER=""
 
-      - name: Package unsigned IPA
+      - name: Package ContextPort unsigned IPA
         shell: bash
         run: |
           set -euo pipefail
@@ -91,21 +91,21 @@ jobs:
           rm -rf build/Payload
           mkdir -p build/Payload
           cp -R "$APP_PATH" build/Payload/
-          (cd build && zip -qry ChatGPT-WebView-phase2-ios16-unsigned.ipa Payload)
-          ls -lh build/ChatGPT-WebView-phase2-ios16-unsigned.ipa
+          (cd build && zip -qry ContextPort-source-ios16-unsigned.ipa Payload)
+          ls -lh build/ContextPort-source-ios16-unsigned.ipa
 
-      - name: Upload IPA artifact
+      - name: Upload ContextPort IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ChatGPT-WebView-phase2-ios16-unsigned-ipa
-          path: build/ChatGPT-WebView-phase2-ios16-unsigned.ipa
+          name: ContextPort-source-ios16-unsigned-ipa
+          path: build/ContextPort-source-ios16-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
 
       - name: Upload generated Xcode project artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ChatGPT-WebView-phase2-generated-xcode-project
+          name: ContextPort-generated-xcode-project
           path: |
             ChatGPTWebView.xcodeproj
             project.yml
