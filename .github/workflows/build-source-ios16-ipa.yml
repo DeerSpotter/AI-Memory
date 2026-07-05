@@ -25,7 +25,7 @@ on:
         default: "16.0"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-source-ios16-ipa:
@@ -36,8 +36,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Apply Grok OAuth popup fix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/codex/multi-ai-architecture'
+      - name: Apply Grok OAuth popup fix for build
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'codex/multi-ai-architecture'
         shell: bash
         run: |
           set -euo pipefail
@@ -88,30 +88,7 @@ jobs:
               source = source.replace(duplicate_load, "", 1)
 
           source_path.write_text(source)
-
-          project_path = Path("project.yml")
-          project = project_path.read_text()
-          if 'CURRENT_PROJECT_VERSION: "32"' in project:
-              project = project.replace('CURRENT_PROJECT_VERSION: "32"', 'CURRENT_PROJECT_VERSION: "33"', 1)
-          elif 'CURRENT_PROJECT_VERSION: "33"' not in project:
-              raise SystemExit("Unexpected build number in project.yml")
-          project_path.write_text(project)
           PY
-
-      - name: Commit Grok OAuth popup fix
-        if: github.event_name == 'push' && github.ref == 'refs/heads/codex/multi-ai-architecture'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --quiet; then
-            echo "Grok OAuth popup fix already applied."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ChatGPTWebView/Web/ChatGPTWebViewStore.swift project.yml
-          git commit -m "Fix Grok OAuth popup navigation"
-          git push origin HEAD:codex/multi-ai-architecture
 
       - name: Show Xcode version
         run: |
