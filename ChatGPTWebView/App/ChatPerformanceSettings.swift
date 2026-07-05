@@ -17,7 +17,11 @@ struct ChatPerformanceConfiguration: Equatable {
     )
 
     func isEnabled(for providerID: AIProviderID) -> Bool {
-        (isEnabled || latestExchangeOnly) && enabledProviderIDs.contains(providerID)
+        isEnabled && !latestExchangeOnly && enabledProviderIDs.contains(providerID)
+    }
+
+    func isLatestExchangeOnlyEnabled(for providerID: AIProviderID) -> Bool {
+        latestExchangeOnly && enabledProviderIDs.contains(providerID)
     }
 }
 
