@@ -7,6 +7,7 @@ struct ChatGPTWebViewApp: App {
     @StateObject private var providerManager = AIProviderManager()
     @StateObject private var profileManager = ChatGPTProfileManager()
     @StateObject private var profileSessionPool = ChatGPTProfileSessionPool()
+    @StateObject private var memoryLaunchSettings = MemoryLaunchSettings()
 
     var body: some Scene {
         WindowGroup {
@@ -16,6 +17,7 @@ struct ChatGPTWebViewApp: App {
                 .environmentObject(providerManager)
                 .environmentObject(profileManager)
                 .environmentObject(profileSessionPool)
+                .environmentObject(memoryLaunchSettings)
                 .task {
                     await appModel.restoreSession()
                 }
