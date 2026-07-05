@@ -60,6 +60,25 @@ private final class DeveloperSourcesModel: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var currentQuery = ""
 
+    var hasSources: Bool {
+        !sources.isEmpty
+    }
+
+    func archiveSnapshot() -> [DeveloperSourceArchiveItem] {
+        sources.map { source in
+            DeveloperSourceArchiveItem(
+                id: source.id,
+                sessionTitle: source.sessionTitle,
+                pageURL: source.pageURL,
+                displayName: source.displayName,
+                urlString: source.urlString,
+                kind: source.kind,
+                content: source.content,
+                loadError: source.loadError
+            )
+        }
+    }
+
     func scanIfNeeded(sessions: [DeveloperWebViewSession]) {
         guard sources.isEmpty, !isScanning else { return }
         scan(sessions: sessions)
@@ -495,16 +514,18 @@ private enum DeveloperSourceLoadError: LocalizedError {
 struct DeveloperSourcesView: View {
     let isActive: Bool
 
+    @EnvironmentObject private var appModel: AppModel
     @EnvironmentObject private var profileSessionPool: ChatGPTProfileSessionPool
     @StateObject private var model = DeveloperSourcesModel()
     @State private var searchText = ""
+    @State private var isSavingToMemory = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     HStack(spacing: 10) {
-                        if model.isScanning || model.isSearching {
+                        if model.isScanning || model.isSearching || isSavingToMemory {
                             ProgressView()
                         }
 
@@ -518,11 +539,18 @@ struct DeveloperSourcesView: View {
                     } label: {
                         Label("Refresh Loaded Sources", systemImage: "arrow.clockwise")
                     }
-                    .disabled(model.isScanning)
+                    .disabled(model.isScanning || isSavingToMemory)
+
+                    Button {
+                        saveSourcesToMemory()
+                    } label: {
+                        Label("Save Sources to Memory", systemImage: "archivebox.fill")
+                    }
+                    .disabled(!model.hasSources || model.isScanning || isSavingToMemory)
                 } header: {
                     Text("Source Inspector")
                 } footer: {
-                    Text("The first Dev visit indexes loaded scripts and styles once. The source index and search results stay in memory across tabs and are cleared only when ContextPort closes. Refresh replaces the current index with sources from the currently loaded browser sessions.")
+                    Text("The first Dev visit indexes loaded scripts and styles once. The source index and search results stay in memory across tabs and are cleared only when ContextPort closes. Save Sources to Memory packages the complete retained index into one ZIP regardless of the active search filter.")
                 }
 
                 Section("Sources") {
@@ -557,6 +585,29 @@ struct DeveloperSourcesView: View {
                 if active {
                     model.scanIfNeeded(sessions: profileSessionPool.developerSourceSessions())
                 }
+            }
+        }
+    }
+
+    private func saveSourcesToMemory() {
+        guard !isSavingToMemory else { return }
+        let snapshot = model.archiveSnapshot()
+        guard !snapshot.isEmpty else { return }
+
+        isSavingToMemory = true
+        appModel.statusMessage = "Packaging \(snapshot.count) retained sources into one Memory ZIP..."
+
+        Task { @MainActor in
+            defer { isSavingToMemory = false }
+
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try DeveloperSourceMemoryArchiveBuilder().saveToMemory(items: snapshot)
+                }.value
+                appModel.reloadLocalMemory()
+                appModel.statusMessage = result.message
+            } catch {
+                appModel.statusMessage = "Developer source ZIP save failed: \(error.localizedDescription)"
             }
         }
     }
