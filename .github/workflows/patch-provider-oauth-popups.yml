@@ -1,3 +1,4 @@
+# Trigger after workflow discovery on the PR branch.
 name: Patch Provider OAuth Popups
 
 on:
