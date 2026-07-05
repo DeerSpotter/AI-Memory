@@ -141,7 +141,7 @@ struct MemoryLaunchSheet: View {
                     pendingProvider = nil
                 }
             } message: {
-                Text("Selected memories are first combined into one ContextPort context bundle. PDF and Markdown are two formats of the same combined context.")
+                Text("Selected memories are first combined into one ContextPort context bundle. PDF and Markdown are two formats of the same combined context. Saved Memory attachments travel with the launch as separate files.")
             }
         }
     }
@@ -171,14 +171,27 @@ struct MemoryLaunchSheet: View {
                     try MemoryContextBundleBuilder().build(entries: selectedEntries, format: format)
                 }.value
 
+                let supplementalAttachmentURLs = selectedEntries.compactMap {
+                    DeveloperSourceMemoryArchiveBuilder.existingArchiveURL(for: $0)
+                }
+                var seenPaths = Set<String>()
+                let handoffFileURLs = (bundle.fileURLs + supplementalAttachmentURLs).filter { url in
+                    seenPaths.insert(url.standardizedFileURL.path).inserted
+                }
+
                 PendingLocalMemoryAttachment.mark(
                     selectedEntries,
-                    fileURLs: bundle.fileURLs,
+                    fileURLs: handoffFileURLs,
                     composerTextURL: bundle.composerTextURL
                 )
 
                 providerManager.selectProvider(provider)
-                appModel.statusMessage = bundle.statusMessage(for: provider.displayName)
+                appModel.statusMessage = launchStatusMessage(
+                    bundle: bundle,
+                    handoffFileURLs: handoffFileURLs,
+                    supplementalAttachmentCount: supplementalAttachmentURLs.count,
+                    providerName: provider.displayName
+                )
                 appModel.openChatGPTTabRequestID = UUID()
                 onLaunched()
                 dismiss()
@@ -187,5 +200,22 @@ struct MemoryLaunchSheet: View {
                 appModel.statusMessage = launchError ?? "Could not prepare Memory context."
             }
         }
+    }
+
+    private func launchStatusMessage(
+        bundle: MemoryContextBundle,
+        handoffFileURLs: [URL],
+        supplementalAttachmentCount: Int,
+        providerName: String
+    ) -> String {
+        if bundle.format.injectsMarkdownText {
+            if supplementalAttachmentCount > 0 {
+                return "Memory context and \(supplementalAttachmentCount) saved attachment\(supplementalAttachmentCount == 1 ? "" : "s") are ready for \(providerName). Tap Paste Context, then Attach Files."
+            }
+            return bundle.statusMessage(for: providerName)
+        }
+
+        let names = handoffFileURLs.map(\.lastPathComponent).joined(separator: ", ")
+        return "\(bundle.selectedCount) Memory \(bundle.selectedCount == 1 ? "entry is" : "entries are") ready for \(providerName): \(names)."
     }
 }
