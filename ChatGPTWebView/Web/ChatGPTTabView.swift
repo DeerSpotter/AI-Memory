@@ -10,6 +10,7 @@ struct AIChatTabView: View {
     @State private var isSavingContext = false
     @State private var isPastingContext = false
     @State private var isAttachingFiles = false
+    @State private var isHardRefreshing = false
     @State private var isKeyboardVisible = false
     @State private var pendingPasteContextText: String?
     @State private var pendingAttachFileURLs: [URL] = []
@@ -41,17 +42,19 @@ struct AIChatTabView: View {
                     CircleIconButton(
                         systemImage: "stop.circle",
                         accessibilityLabel: "Stop \(provider.displayName) activity",
-                        accessibilityHint: "Stops current WebView activity"
+                        accessibilityHint: "Stops current WebView activity",
+                        foregroundColor: .primary
                     ) {
                         webViewStore.stopCurrentActivity()
                     }
 
                     CircleIconButton(
                         systemImage: "arrow.clockwise",
-                        accessibilityLabel: "Reload \(provider.displayName) session",
-                        accessibilityHint: "Reloads the current WebView page"
+                        accessibilityLabel: "Hard refresh \(provider.displayName) session",
+                        accessibilityHint: "Leaves and reloads the current AI page while preserving the active session",
+                        foregroundColor: isHardRefreshing ? .red : .primary
                     ) {
-                        webViewStore.reloadCurrentSession()
+                        hardRefreshCurrentSession()
                     }
                 }
                 .padding(.top, 12)
@@ -151,6 +154,7 @@ struct AIChatTabView: View {
         let activeProvider = provider
         let newActiveProfile = activeProfile
         isKeyboardVisible = false
+        isHardRefreshing = false
 
         sessionPool.setTypingPriority(
             false,
@@ -230,13 +234,27 @@ struct AIChatTabView: View {
         Task { @MainActor in
             defer { isAttachingFiles = false }
             let memoryAttachWorked = await webViewStore.injectFilesIntoChatGPTUpload(urls)
+
             pendingAttachFileURLs = []
+            webViewStore.preparePendingUploadURLs([])
 
             if memoryAttachWorked {
-                appModel.statusMessage = "Attached files from app Memory to \(provider.displayName). Review the new chat before sending."
+                appModel.statusMessage = "Context bundle handoff completed for \(provider.displayName). Review the attached context before sending."
             } else {
-                appModel.statusMessage = "Direct memory attach was attempted in \(provider.displayName). If the file card did not appear, return to Memory and try again."
+                appModel.statusMessage = "Context bundle attach was attempted in \(provider.displayName). Save Context is available again. Return to Memory to retry the bundle if needed."
             }
+        }
+    }
+
+    private func hardRefreshCurrentSession() {
+        guard !isHardRefreshing else { return }
+        isHardRefreshing = true
+        appModel.statusMessage = "Hard refreshing \(provider.displayName)..."
+
+        Task { @MainActor in
+            await webViewStore.hardRefreshCurrentSession()
+            isHardRefreshing = false
+            appModel.statusMessage = "Hard refresh completed for \(provider.displayName)."
         }
     }
 
@@ -293,6 +311,7 @@ private struct CircleIconButton: View {
     let systemImage: String
     let accessibilityLabel: String
     let accessibilityHint: String
+    let foregroundColor: Color
     let action: () -> Void
 
     var body: some View {
@@ -302,7 +321,7 @@ private struct CircleIconButton: View {
                 .frame(width: 36, height: 36)
         }
         .buttonStyle(.plain)
-        .foregroundColor(.primary)
+        .foregroundColor(foregroundColor)
         .background(.ultraThinMaterial, in: Circle())
         .overlay(Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1))
         .shadow(radius: 2)

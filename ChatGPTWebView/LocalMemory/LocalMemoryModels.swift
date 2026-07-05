@@ -15,6 +15,7 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
     var messageCount: Int?
     var exportedAt: String?
     var attachmentFilenames: [String]
+    var isFavorite: Bool
 
     init(
         id: UUID = UUID(),
@@ -30,7 +31,8 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
         markdownFilename: String? = nil,
         messageCount: Int? = nil,
         exportedAt: String? = nil,
-        attachmentFilenames: [String] = []
+        attachmentFilenames: [String] = [],
+        isFavorite: Bool = false
     ) {
         self.id = id
         self.projectName = projectName
@@ -46,6 +48,7 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
         self.messageCount = messageCount
         self.exportedAt = exportedAt
         self.attachmentFilenames = attachmentFilenames
+        self.isFavorite = isFavorite
     }
 
     init(from decoder: Decoder) throws {
@@ -64,6 +67,7 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
         self.messageCount = try container.decodeIfPresent(Int.self, forKey: .messageCount)
         self.exportedAt = try container.decodeIfPresent(String.self, forKey: .exportedAt)
         self.attachmentFilenames = try container.decodeIfPresent([String].self, forKey: .attachmentFilenames) ?? []
+        self.isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 }
 
