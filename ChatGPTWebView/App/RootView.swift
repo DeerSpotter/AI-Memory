@@ -345,6 +345,15 @@ private struct SettingsView: View {
 
                 Section {
                     Toggle("Optimize Long Chats", isOn: $chatPerformanceSettings.isEnabled)
+                        .disabled(chatPerformanceSettings.latestExchangeOnly)
+
+                    Toggle(isOn: $chatPerformanceSettings.latestExchangeOnly) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "bolt.fill")
+                                .frame(width: 22)
+                            Text("Latest Exchange Only")
+                        }
+                    }
 
                     Stepper(
                         value: $chatPerformanceSettings.visibleMessageLimit,
@@ -358,7 +367,7 @@ private struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    .disabled(!chatPerformanceSettings.isEnabled)
+                    .disabled(!chatPerformanceSettings.isEnabled || chatPerformanceSettings.latestExchangeOnly)
 
                     Text("Optimize On")
                         .font(.caption)
@@ -394,7 +403,7 @@ private struct SettingsView: View {
                 } header: {
                     Text("Chat Performance")
                 } footer: {
-                    Text("Long-chat optimization hides older loaded messages without removing them from Save Context. ChatGPT Mobile Fallback adds mweb_fallback=1 to ChatGPT conversation URLs only when the parameter is missing.")
+                    Text("Latest Exchange Only overrides the normal message window and keeps only your newest question plus the current AI response visible. Older loaded messages remain available to Save Context. Long-chat optimization otherwise hides older loaded messages without removing them. ChatGPT Mobile Fallback adds mweb_fallback=1 to ChatGPT conversation URLs only when the parameter is missing.")
                 }
 
                 Section("Memory Sharing") {
