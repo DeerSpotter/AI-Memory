@@ -6,8 +6,7 @@ struct LocalMemoryDetailView: View {
     @EnvironmentObject private var appModel: AppModel
     let entry: LocalMemoryEntry
 
-    @State private var showNewChatFileSelection = false
-    @State private var exportMessage: String?
+    @State private var launchRequest: MemoryLaunchRequest?
 
     private let store = LocalMemoryStore()
 
@@ -18,21 +17,12 @@ struct LocalMemoryDetailView: View {
                     .font(.title2.weight(.bold))
 
                 Button {
-                    showNewChatFileSelection = true
+                    launchRequest = MemoryLaunchRequest(entries: [entry])
                 } label: {
                     Label("Start New Chat", systemImage: "bubble.left.and.bubble.right")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-
-                if let exportMessage {
-                    Text(exportMessage)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
-                }
 
                 fileInfo
 
@@ -64,26 +54,8 @@ struct LocalMemoryDetailView: View {
         }
         .navigationTitle("Saved Chat")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            "Download files for this new chat",
-            isPresented: $showNewChatFileSelection,
-            titleVisibility: .visible
-        ) {
-            Button("PDF + Markdown") {
-                startNewChat(exportPDF: true, exportMarkdown: true)
-            }
-            Button("PDF only") {
-                startNewChat(exportPDF: true, exportMarkdown: false)
-            }
-            Button("Markdown only") {
-                startNewChat(exportPDF: false, exportMarkdown: true)
-            }
-            Button("No file, insert Markdown text") {
-                startNewChat(exportPDF: false, exportMarkdown: false)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Only this saved chat will be downloaded into app storage. After ChatGPT opens, tap +, choose Files, then select the exported file from ChatGPT Memory.")
+        .sheet(item: $launchRequest) { request in
+            MemoryLaunchSheet(entries: request.entries)
         }
     }
 
@@ -103,36 +75,6 @@ struct LocalMemoryDetailView: View {
         .font(.caption)
         .foregroundColor(.secondary)
         .textSelection(.enabled)
-    }
-
-    private func startNewChat(exportPDF: Bool, exportMarkdown: Bool) {
-        do {
-            var exportedURLs: [URL] = []
-
-            if exportPDF {
-                exportedURLs.append(try store.exportPDFToFiles(for: entry))
-            }
-
-            if exportMarkdown {
-                exportedURLs.append(try store.exportMarkdownToFiles(for: entry))
-            }
-
-            let injectMarkdown = !exportPDF && !exportMarkdown
-            PendingLocalMemoryAttachment.mark(entry, fileURLs: exportedURLs, injectMarkdown: injectMarkdown)
-
-            if exportedURLs.isEmpty {
-                exportMessage = "Opening new chat. Saved Markdown will be inserted or copied for paste."
-            } else {
-                let fileList = exportedURLs.map(\.lastPathComponent).joined(separator: ", ")
-                exportMessage = "Downloaded for this chat: \(fileList). In ChatGPT, tap + > Files > ChatGPT Memory."
-            }
-
-            appModel.statusMessage = exportMessage ?? "Opening new chat."
-            appModel.openChatGPTTabRequestID = UUID()
-        } catch {
-            exportMessage = "Could not download selected file: \(error.localizedDescription)"
-            appModel.statusMessage = exportMessage ?? "Download failed."
-        }
     }
 }
 
