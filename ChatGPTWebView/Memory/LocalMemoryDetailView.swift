@@ -24,9 +24,86 @@ struct LocalMemoryDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
-                fileInfo
+                memoryInfo
 
-                if let pdfURL = store.pdfURL(for: entry) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Revision History")
+                        .font(.headline)
+
+                    ForEach(entry.orderedRevisions.reversed()) { revision in
+                        NavigationLink {
+                            LocalMemoryRevisionDetailView(entry: entry, revision: revision)
+                        } label: {
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Revision \(revision.number)")
+                                        .font(.body.weight(.semibold))
+                                    Text(revision.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(revision.source)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer(minLength: 0)
+
+                                if let messageCount = revision.messageCount {
+                                    Text("\(messageCount) msgs")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(12)
+                            .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Memory")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $launchRequest) { request in
+            MemoryLaunchSheet(entries: request.entries)
+        }
+    }
+
+    private var memoryInfo: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Revisions: \(entry.revisionCount)")
+            Text("Created: \(entry.createdAt.formatted(date: .abbreviated, time: .shortened))")
+            Text("Updated: \(entry.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+            Text("Project: \(entry.projectName)")
+            Text("Latest source: \(entry.source)")
+        }
+        .font(.caption)
+        .foregroundColor(.secondary)
+        .textSelection(.enabled)
+    }
+}
+
+private struct LocalMemoryRevisionDetailView: View {
+    let entry: LocalMemoryEntry
+    let revision: LocalMemoryRevision
+
+    private let store = LocalMemoryStore()
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(entry.title)
+                    .font(.title3.weight(.bold))
+
+                revisionInfo
+
+                if let pdfURL = store.pdfURL(for: revision) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("PDF")
                             .font(.headline)
@@ -37,40 +114,43 @@ struct LocalMemoryDetailView: View {
                     }
                 }
 
-                if let markdown = store.markdownText(for: entry) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Markdown")
-                            .font(.headline)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Markdown")
+                        .font(.headline)
+
+                    if let markdown = store.markdownText(for: revision, in: entry) {
                         Text(markdown)
                             .font(.footnote.monospaced())
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
                             .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                    } else {
+                        Text("Revision Markdown is unavailable on this device.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
             .padding()
         }
-        .navigationTitle("Saved Chat")
+        .navigationTitle("Revision \(revision.number)")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $launchRequest) { request in
-            MemoryLaunchSheet(entries: request.entries)
-        }
     }
 
-    private var fileInfo: some View {
+    private var revisionInfo: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let messageCount = entry.messageCount {
+            Text("Saved: \(revision.createdAt.formatted(date: .abbreviated, time: .shortened))")
+            if let messageCount = revision.messageCount {
                 Text("Messages: \(messageCount)")
             }
-            if let pdfFilename = entry.pdfFilename {
+            Text("Source: \(revision.source)")
+            if let pdfFilename = revision.pdfFilename {
                 Text("PDF: \(pdfFilename)")
             }
-            if let markdownFilename = entry.markdownFilename {
+            if let markdownFilename = revision.markdownFilename {
                 Text("Markdown: \(markdownFilename)")
             }
-            Text("Source: \(entry.source)")
         }
         .font(.caption)
         .foregroundColor(.secondary)
