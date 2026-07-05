@@ -1,18 +1,22 @@
 import Foundation
 
+
 enum LocalMemoryStoreError: LocalizedError {
     case emptyMarkdown
     case missingPDF
     case missingMarkdown
+    case memoryNotFound
 
     var errorDescription: String? {
         switch self {
         case .emptyMarkdown:
-            return "The exported ChatGPT conversation did not contain readable Markdown."
+            return "The exported AI conversation did not contain readable Markdown."
         case .missingPDF:
             return "No saved PDF file was found for this memory entry."
         case .missingMarkdown:
             return "No saved Markdown file was found for this memory entry."
+        case .memoryNotFound:
+            return "The selected Memory could not be found."
         }
     }
 }
@@ -56,38 +60,179 @@ final class LocalMemoryStore {
     }
 
     @discardableResult
-    func saveExportedConversation(projectName: String, title: String, markdownText: String, pdfData: Data, sourceURL: String?, messageCount: Int, exportedAt: String) throws -> LocalMemorySaveResult {
+    func saveExportedConversation(
+        projectName: String,
+        title: String,
+        markdownText: String,
+        pdfData: Data,
+        sourceURL: String?,
+        messageCount: Int,
+        exportedAt: String
+    ) throws -> LocalMemorySaveResult {
         let body = markdownText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw LocalMemoryStoreError.emptyMarkdown }
+
         var entries = try loadEntries()
-        let id = UUID(), now = Date()
-        let pdfName = "\(id.uuidString).pdf", mdName = "\(id.uuidString).md"
-        let entry = LocalMemoryEntry(id: id, projectName: clean(projectName, "ChatGPT-WebView"), title: clean(title, "ChatGPT exported chat"), content: body, source: clean(sourceURL ?? "chatgpt_web", "chatgpt_web"), tags: ["chat-export", "chatgpt", "context", "local", "markdown", "memory"], importance: 5, createdAt: now, updatedAt: now, pdfFilename: pdfName, markdownFilename: mdName, messageCount: messageCount, exportedAt: exportedAt, attachmentFilenames: [pdfName, mdName])
+        let id = UUID()
+        let revisionID = UUID()
+        let now = Date()
+        let pdfName = "\(revisionID.uuidString).pdf"
+        let mdName = "\(revisionID.uuidString).md"
+        let source = clean(sourceURL ?? "ai_web", "ai_web")
+        let revision = LocalMemoryRevision(
+            id: revisionID,
+            number: 1,
+            createdAt: now,
+            source: source,
+            pdfFilename: pdfName,
+            markdownFilename: mdName,
+            messageCount: messageCount,
+            exportedAt: exportedAt
+        )
+        let entry = LocalMemoryEntry(
+            id: id,
+            projectName: clean(projectName, "ContextPort"),
+            title: clean(title, "Exported chat"),
+            content: body,
+            source: source,
+            tags: ["chat-export", "context", "local", "markdown", "memory"],
+            importance: 5,
+            createdAt: now,
+            updatedAt: now,
+            pdfFilename: pdfName,
+            markdownFilename: mdName,
+            messageCount: messageCount,
+            exportedAt: exportedAt,
+            attachmentFilenames: [pdfName, mdName],
+            revisions: [revision]
+        )
+
         try ensureInternalFolders()
         try pdfData.write(to: pdfs.appendingPathComponent(pdfName), options: [.atomic])
         try body.write(to: markdown.appendingPathComponent(mdName), atomically: true, encoding: .utf8)
         entries.append(entry)
         try write(entries)
-        return LocalMemorySaveResult(entry: entry, totalCount: entries.count, message: "Saved full ChatGPT chat to Memory as PDF and Markdown.")
+        return LocalMemorySaveResult(
+            entry: entry,
+            totalCount: entries.count,
+            message: "Saved full chat to Memory as Revision 1."
+        )
+    }
+
+    @discardableResult
+    func addRevision(
+        to memory: LocalMemoryEntry,
+        markdownText: String,
+        pdfData: Data,
+        sourceURL: String?,
+        messageCount: Int,
+        exportedAt: String
+    ) throws -> LocalMemorySaveResult {
+        let body = markdownText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { throw LocalMemoryStoreError.emptyMarkdown }
+
+        var entries = try loadEntries()
+        guard let entryIndex = entries.firstIndex(where: { $0.id == memory.id }) else {
+            throw LocalMemoryStoreError.memoryNotFound
+        }
+
+        var entry = entries[entryIndex]
+        let nextNumber = (entry.revisions.map(\.number).max() ?? 0) + 1
+        let revisionID = UUID()
+        let now = Date()
+        let source = clean(sourceURL ?? "ai_web", "ai_web")
+        let pdfName = "\(revisionID.uuidString).pdf"
+        let mdName = "\(revisionID.uuidString).md"
+        let revision = LocalMemoryRevision(
+            id: revisionID,
+            number: nextNumber,
+            createdAt: now,
+            source: source,
+            pdfFilename: pdfName,
+            markdownFilename: mdName,
+            messageCount: messageCount,
+            exportedAt: exportedAt
+        )
+
+        try ensureInternalFolders()
+        try pdfData.write(to: pdfs.appendingPathComponent(pdfName), options: [.atomic])
+        try body.write(to: markdown.appendingPathComponent(mdName), atomically: true, encoding: .utf8)
+
+        entry.content = body
+        entry.source = source
+        entry.updatedAt = now
+        entry.pdfFilename = pdfName
+        entry.markdownFilename = mdName
+        entry.messageCount = messageCount
+        entry.exportedAt = exportedAt
+        entry.attachmentFilenames = Array(Set(entry.attachmentFilenames + [pdfName, mdName])).sorted()
+        entry.revisions.append(revision)
+        entry.revisions.sort { $0.number < $1.number }
+        entries[entryIndex] = entry
+        try write(entries)
+
+        return LocalMemorySaveResult(
+            entry: entry,
+            totalCount: entries.count,
+            message: "Added Revision \(nextNumber) to \"\(entry.title)\"."
+        )
     }
 
     @discardableResult
     func saveExportedPDF(projectName: String, title: String, pdfData: Data, sourceURL: String?) throws -> LocalMemorySaveResult {
-        try saveExportedConversation(projectName: projectName, title: title, markdownText: "# \(title)\n\nPDF only export.", pdfData: pdfData, sourceURL: sourceURL, messageCount: 0, exportedAt: Self.iso.string(from: Date()))
+        try saveExportedConversation(
+            projectName: projectName,
+            title: title,
+            markdownText: "# \(title)\n\nPDF only export.",
+            pdfData: pdfData,
+            sourceURL: sourceURL,
+            messageCount: 0,
+            exportedAt: Self.iso.string(from: Date())
+        )
     }
 
     @discardableResult
     func saveEntry(projectName: String, title: String, content: String, source: String, tags: [String], importance: Int) throws -> LocalMemorySaveResult {
         var entries = try loadEntries()
-        let id = UUID(), now = Date()
-        let pdfName = "\(id.uuidString).pdf", mdName = "\(id.uuidString).md"
-        var entry = LocalMemoryEntry(id: id, projectName: clean(projectName, "Local Project"), title: clean(title, "Untitled memory"), content: clean(content, ""), source: clean(source, "manual"), tags: Array(Set(tags + ["local", "memory"])).sorted(), importance: importance, createdAt: now, updatedAt: now, pdfFilename: pdfName, markdownFilename: mdName, exportedAt: Self.iso.string(from: now), attachmentFilenames: [pdfName, mdName])
+        let id = UUID()
+        let revisionID = UUID()
+        let now = Date()
+        let pdfName = "\(revisionID.uuidString).pdf"
+        let mdName = "\(revisionID.uuidString).md"
+        let cleanSource = clean(source, "manual")
+        let revision = LocalMemoryRevision(
+            id: revisionID,
+            number: 1,
+            createdAt: now,
+            source: cleanSource,
+            pdfFilename: pdfName,
+            markdownFilename: mdName,
+            exportedAt: Self.iso.string(from: now)
+        )
+        var entry = LocalMemoryEntry(
+            id: id,
+            projectName: clean(projectName, "Local Project"),
+            title: clean(title, "Untitled memory"),
+            content: clean(content, ""),
+            source: cleanSource,
+            tags: Array(Set(tags + ["local", "memory"])).sorted(),
+            importance: importance,
+            createdAt: now,
+            updatedAt: now,
+            pdfFilename: pdfName,
+            markdownFilename: mdName,
+            exportedAt: Self.iso.string(from: now),
+            attachmentFilenames: [pdfName, mdName],
+            revisions: [revision]
+        )
         try ensureInternalFolders()
         try LocalMemoryPDFRenderer.render(entry: entry, to: pdfs.appendingPathComponent(pdfName))
         try entry.content.write(to: markdown.appendingPathComponent(mdName), atomically: true, encoding: .utf8)
-        entry.pdfFilename = pdfName; entry.markdownFilename = mdName
-        entries.append(entry); try write(entries)
-        return LocalMemorySaveResult(entry: entry, totalCount: entries.count, message: "Saved context to Memory.")
+        entry.pdfFilename = pdfName
+        entry.markdownFilename = mdName
+        entries.append(entry)
+        try write(entries)
+        return LocalMemorySaveResult(entry: entry, totalCount: entries.count, message: "Saved context to Memory as Revision 1.")
     }
 
     func search(_ query: String, limit: Int = 25) throws -> [LocalMemoryEntry] { Array(try loadEntries().prefix(limit)) }
@@ -95,10 +240,38 @@ final class LocalMemoryStore {
 
     func pdfURL(for entry: LocalMemoryEntry) -> URL? { url(entry.pdfFilename, in: pdfs) }
     func markdownURL(for entry: LocalMemoryEntry) -> URL? { url(entry.markdownFilename, in: markdown) }
+    func pdfURL(for revision: LocalMemoryRevision) -> URL? { url(revision.pdfFilename, in: pdfs) }
+    func markdownURL(for revision: LocalMemoryRevision) -> URL? { url(revision.markdownFilename, in: markdown) }
     func visiblePDFURL(for entry: LocalMemoryEntry) -> URL? { url(visiblePDFName(for: entry), in: visiblePDFs) }
     func visibleMarkdownURL(for entry: LocalMemoryEntry) -> URL? { url(visibleMarkdownName(for: entry), in: visibleMarkdown) }
-    func markdownText(for entry: LocalMemoryEntry) -> String? { markdownURL(for: entry).flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? (entry.content.isEmpty ? nil : entry.content) }
-    func fileURLs(for entry: LocalMemoryEntry) -> [URL] { [visiblePDFURL(for: entry), visibleMarkdownURL(for: entry), pdfURL(for: entry), markdownURL(for: entry)].compactMap { $0 }.uniqueByPath() }
+
+    func markdownText(for entry: LocalMemoryEntry) -> String? {
+        if let latest = entry.latestRevision,
+           let text = markdownText(for: latest, in: entry) {
+            return text
+        }
+        return markdownURL(for: entry).flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+            ?? (entry.content.isEmpty ? nil : entry.content)
+    }
+
+    func markdownText(for revision: LocalMemoryRevision, in entry: LocalMemoryEntry) -> String? {
+        if let source = markdownURL(for: revision),
+           let text = try? String(contentsOf: source, encoding: .utf8) {
+            return text
+        }
+
+        if revision.number == entry.latestRevision?.number, !entry.content.isEmpty {
+            return entry.content
+        }
+
+        return nil
+    }
+
+    func fileURLs(for entry: LocalMemoryEntry) -> [URL] {
+        [visiblePDFURL(for: entry), visibleMarkdownURL(for: entry), pdfURL(for: entry), markdownURL(for: entry)]
+            .compactMap { $0 }
+            .uniqueByPath()
+    }
 
     @discardableResult
     func exportPDFToFiles(for entry: LocalMemoryEntry) throws -> URL {
@@ -128,8 +301,19 @@ final class LocalMemoryStore {
     }
 
     func deleteEntry(_ entry: LocalMemoryEntry) throws {
-        var entries = try loadEntries(); entries.removeAll { $0.id == entry.id }
-        for fileURL in [pdfURL(for: entry), markdownURL(for: entry), visiblePDFURL(for: entry), visibleMarkdownURL(for: entry)].compactMap({ $0 }) {
+        var entries = try loadEntries()
+        entries.removeAll { $0.id == entry.id }
+
+        let revisionFiles = entry.revisions.flatMap { revision in
+            [pdfURL(for: revision), markdownURL(for: revision)]
+        }
+        let fileURLs = revisionFiles + [
+            pdfURL(for: entry),
+            markdownURL(for: entry),
+            visiblePDFURL(for: entry),
+            visibleMarkdownURL(for: entry)
+        ]
+        for fileURL in fileURLs.compactMap({ $0 }).uniqueByPath() {
             try? fm.removeItem(at: fileURL)
         }
         try write(entries)
@@ -147,7 +331,17 @@ final class LocalMemoryStore {
     }
 
     func startNewChatContext(for entry: LocalMemoryEntry) -> String {
-        ["Start a new chat using this saved ChatGPT memory bundle.", "", "Title: \(entry.title)", "Source: \(entry.source)", "PDF: \(entry.pdfFilename ?? "none")", "Markdown: \(entry.markdownFilename ?? "none")", "", "Use the PDF and Markdown saved in the app Memory tab as context for this new chat."].joined(separator: "\n")
+        [
+            "Start a new chat using this saved ContextPort Memory.",
+            "",
+            "Title: \(entry.title)",
+            "Source: \(entry.source)",
+            "Revisions: \(entry.revisionCount)",
+            "PDF: \(entry.pdfFilename ?? \"none\")",
+            "Markdown: \(entry.markdownFilename ?? \"none\")",
+            "",
+            "Use the saved Memory revision history as context for this new chat."
+        ].joined(separator: "\n")
     }
 
     private func visiblePDFName(for entry: LocalMemoryEntry) -> String {
@@ -176,14 +370,27 @@ final class LocalMemoryStore {
         try fm.createDirectory(at: visibleMarkdown, withIntermediateDirectories: true)
     }
 
-    private func write(_ entries: [LocalMemoryEntry]) throws { try ensureInternalFolders(); try encoder.encode(entries.sorted { $0.updatedAt > $1.updatedAt }).write(to: index, options: [.atomic]) }
-    private func clean(_ value: String, _ fallback: String) -> String { let text = value.trimmingCharacters(in: .whitespacesAndNewlines); return text.isEmpty ? fallback : text }
+    private func write(_ entries: [LocalMemoryEntry]) throws {
+        try ensureInternalFolders()
+        try encoder.encode(entries.sorted { $0.updatedAt > $1.updatedAt }).write(to: index, options: [.atomic])
+    }
+
+    private func clean(_ value: String, _ fallback: String) -> String {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? fallback : text
+    }
+
     private func cleanFileName(_ value: String, fallback: String) -> String {
         let invalid = CharacterSet(charactersIn: "/\\?%*|\"<>:")
         let cleaned = value.components(separatedBy: invalid).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         return cleaned.isEmpty ? fallback : String(cleaned.prefix(80))
     }
-    private static let iso: ISO8601DateFormatter = { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f }()
+
+    private static let iso: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 }
 
 private extension Array where Element == URL {
