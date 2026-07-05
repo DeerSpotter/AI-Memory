@@ -378,10 +378,23 @@ private struct SettingsView: View {
                             }
                         }
                     }
+
+                    Divider()
+
+                    Toggle(isOn: $chatPerformanceSettings.chatGPTMobileWebFallbackEnabled) {
+                        HStack(spacing: 8) {
+                            Image(systemName: AIProviderID.chatGPT.provider.systemImage)
+                                .frame(width: 22)
+                            Text("ChatGPT Mobile Fallback")
+                            Text("Experimental")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Chat Performance")
                 } footer: {
-                    Text("Keeps only the newest messages visible in long chats. Older loaded messages remain in the page for Save Context and are revealed 10 at a time as you scroll upward.")
+                    Text("Long-chat optimization hides older loaded messages without removing them from Save Context. ChatGPT Mobile Fallback adds mweb_fallback=1 to ChatGPT conversation URLs only when the parameter is missing.")
                 }
 
                 Section("Memory Sharing") {
