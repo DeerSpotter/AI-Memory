@@ -1,5 +1,36 @@
 import Foundation
 
+struct LocalMemoryRevision: Codable, Identifiable, Sendable, Hashable {
+    let id: UUID
+    let number: Int
+    let createdAt: Date
+    let source: String
+    let pdfFilename: String?
+    let markdownFilename: String?
+    let messageCount: Int?
+    let exportedAt: String?
+
+    init(
+        id: UUID = UUID(),
+        number: Int,
+        createdAt: Date = Date(),
+        source: String,
+        pdfFilename: String? = nil,
+        markdownFilename: String? = nil,
+        messageCount: Int? = nil,
+        exportedAt: String? = nil
+    ) {
+        self.id = id
+        self.number = max(number, 1)
+        self.createdAt = createdAt
+        self.source = source
+        self.pdfFilename = pdfFilename
+        self.markdownFilename = markdownFilename
+        self.messageCount = messageCount
+        self.exportedAt = exportedAt
+    }
+}
+
 struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
     let id: UUID
     var projectName: String
@@ -16,6 +47,7 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
     var exportedAt: String?
     var attachmentFilenames: [String]
     var isFavorite: Bool
+    var revisions: [LocalMemoryRevision]
 
     init(
         id: UUID = UUID(),
@@ -32,7 +64,8 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
         messageCount: Int? = nil,
         exportedAt: String? = nil,
         attachmentFilenames: [String] = [],
-        isFavorite: Bool = false
+        isFavorite: Bool = false,
+        revisions: [LocalMemoryRevision] = []
     ) {
         self.id = id
         self.projectName = projectName
@@ -49,6 +82,19 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
         self.exportedAt = exportedAt
         self.attachmentFilenames = attachmentFilenames
         self.isFavorite = isFavorite
+        self.revisions = revisions.isEmpty
+            ? [
+                LocalMemoryRevision(
+                    number: 1,
+                    createdAt: createdAt,
+                    source: source,
+                    pdfFilename: pdfFilename,
+                    markdownFilename: markdownFilename,
+                    messageCount: messageCount,
+                    exportedAt: exportedAt
+                )
+            ]
+            : revisions.sorted { $0.number < $1.number }
     }
 
     init(from decoder: Decoder) throws {
@@ -68,6 +114,35 @@ struct LocalMemoryEntry: Codable, Identifiable, Sendable, Hashable {
         self.exportedAt = try container.decodeIfPresent(String.self, forKey: .exportedAt)
         self.attachmentFilenames = try container.decodeIfPresent([String].self, forKey: .attachmentFilenames) ?? []
         self.isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+
+        let decodedRevisions = try container.decodeIfPresent([LocalMemoryRevision].self, forKey: .revisions) ?? []
+        if decodedRevisions.isEmpty {
+            self.revisions = [
+                LocalMemoryRevision(
+                    number: 1,
+                    createdAt: createdAt,
+                    source: source,
+                    pdfFilename: pdfFilename,
+                    markdownFilename: markdownFilename,
+                    messageCount: messageCount,
+                    exportedAt: exportedAt
+                )
+            ]
+        } else {
+            self.revisions = decodedRevisions.sorted { $0.number < $1.number }
+        }
+    }
+
+    var revisionCount: Int {
+        revisions.count
+    }
+
+    var orderedRevisions: [LocalMemoryRevision] {
+        revisions.sorted { $0.number < $1.number }
+    }
+
+    var latestRevision: LocalMemoryRevision? {
+        orderedRevisions.last
     }
 }
 
