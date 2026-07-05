@@ -1,6 +1,7 @@
 import Foundation
 
 struct PendingLocalMemoryPayload {
+    let sourceMemoryIDs: [UUID]
     let fileURLs: [URL]
     let composerText: String?
 }
@@ -46,7 +47,11 @@ enum PendingLocalMemoryAttachment {
             ? MemoryContextBundleBuilder.composerText(for: selectedEntries)
             : nil
 
-        return PendingLocalMemoryPayload(fileURLs: selectedURLs, composerText: composerText)
+        return PendingLocalMemoryPayload(
+            sourceMemoryIDs: selectedEntries.map(\.id),
+            fileURLs: selectedURLs,
+            composerText: composerText
+        )
     }
 
     static func consumeFileURLs() -> [URL] {
