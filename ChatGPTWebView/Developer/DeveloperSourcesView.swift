@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import WebKit
 
 struct DeveloperWebViewSession {
@@ -58,6 +59,11 @@ private final class DeveloperSourcesModel: ObservableObject {
     private var scanTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var currentQuery = ""
+
+    func scanIfNeeded(sessions: [DeveloperWebViewSession]) {
+        guard sources.isEmpty, !isScanning else { return }
+        scan(sessions: sessions)
+    }
 
     func scan(sessions: [DeveloperWebViewSession]) {
         scanTask?.cancel()
@@ -140,7 +146,7 @@ private final class DeveloperSourcesModel: ObservableObject {
                 return $0.sessionTitle.localizedCaseInsensitiveCompare($1.sessionTitle) == .orderedAscending
             }
             self.isScanning = false
-            self.status = "Indexed \(self.sources.count) sources from \(scannedSessionCount) loaded session\(scannedSessionCount == 1 ? "" : "s")."
+            self.status = "Indexed \(self.sources.count) sources from \(scannedSessionCount) loaded session\(scannedSessionCount == 1 ? "" : "s"). Kept until ContextPort closes."
             self.scheduleSearch(self.currentQuery)
         }
     }
@@ -178,18 +184,6 @@ private final class DeveloperSourcesModel: ObservableObject {
             self.results = searchedResults
             self.isSearching = false
         }
-    }
-
-    func cancel() {
-        scanTask?.cancel()
-        searchTask?.cancel()
-        scanTask = nil
-        searchTask = nil
-        sources.removeAll(keepingCapacity: false)
-        results.removeAll(keepingCapacity: false)
-        isScanning = false
-        isSearching = false
-        status = "Source index released."
     }
 
     private static func discoverSources(in webView: WKWebView) async throws -> DeveloperDiscoveredPage {
@@ -499,6 +493,8 @@ private enum DeveloperSourceLoadError: LocalizedError {
 }
 
 struct DeveloperSourcesView: View {
+    let isActive: Bool
+
     @EnvironmentObject private var profileSessionPool: ChatGPTProfileSessionPool
     @StateObject private var model = DeveloperSourcesModel()
     @State private var searchText = ""
@@ -526,7 +522,7 @@ struct DeveloperSourcesView: View {
                 } header: {
                     Text("Source Inspector")
                 } footer: {
-                    Text("ContextPort indexes scripts and styles from browser sessions already loaded in the app. The index exists only while this Dev tab is open.")
+                    Text("The first Dev visit indexes loaded scripts and styles once. The source index and search results stay in memory across tabs and are cleared only when ContextPort closes. Refresh replaces the current index with sources from the currently loaded browser sessions.")
                 }
 
                 Section("Sources") {
@@ -548,15 +544,19 @@ struct DeveloperSourcesView: View {
             }
             .navigationTitle("Sources")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Search loaded source text")
+            .searchable(text: $searchText, prompt: "Search source contents")
             .onChange(of: searchText) { query in
                 model.scheduleSearch(query)
             }
             .task {
-                model.scan(sessions: profileSessionPool.developerSourceSessions())
+                if isActive {
+                    model.scanIfNeeded(sessions: profileSessionPool.developerSourceSessions())
+                }
             }
-            .onDisappear {
-                model.cancel()
+            .onChange(of: isActive) { active in
+                if active {
+                    model.scanIfNeeded(sessions: profileSessionPool.developerSourceSessions())
+                }
             }
         }
     }
@@ -610,55 +610,45 @@ private struct DeveloperSourceDetailView: View {
     let result: DeveloperSourceSearchResult
     let query: String
 
-    var body: some View {
-        List {
-            Section("Source") {
-                LabeledContent("Name", value: result.source.displayName)
-                LabeledContent("Type", value: result.source.kind)
-                LabeledContent("Session", value: result.source.sessionTitle)
+    @State private var isShowingInfo = false
 
-                if result.source.byteCount > 0 {
-                    LabeledContent(
-                        "Indexed Text",
-                        value: ByteCountFormatter.string(
-                            fromByteCount: Int64(result.source.byteCount),
-                            countStyle: .file
-                        )
+    var body: some View {
+        Group {
+            if let content = result.source.content {
+                VStack(spacing: 0) {
+                    if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                            Text("\(result.matchCount) match\(result.matchCount == 1 ? "" : "es") for \"\(query)\"")
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            Text("First match shown")
+                                .foregroundColor(.secondary)
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 12)
+                        .frame(height: 34)
+                        .background(.thinMaterial)
+                    }
+
+                    DeveloperSourceCodeTextView(
+                        sourceID: result.source.id,
+                        content: content,
+                        searchQuery: query
                     )
                 }
+            } else {
+                List {
+                    Section("Source") {
+                        LabeledContent("Name", value: result.source.displayName)
+                        LabeledContent("Type", value: result.source.kind)
+                        LabeledContent("Session", value: result.source.sessionTitle)
+                    }
 
-                if let urlString = result.source.urlString {
-                    Text(urlString)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                }
-            }
-
-            if let loadError = result.source.loadError {
-                Section("Load Error") {
-                    Text(loadError)
-                        .textSelection(.enabled)
-                }
-            }
-
-            if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Section("Search") {
-                    LabeledContent("Query", value: query)
-                    LabeledContent("Matches", value: "\(result.matchCount)")
-                }
-
-                if !result.snippets.isEmpty {
-                    Section("Match Clues") {
-                        ForEach(Array(result.snippets.enumerated()), id: \.offset) { index, snippet in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Match \(index + 1)")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(.secondary)
-                                Text(snippet)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .textSelection(.enabled)
-                            }
-                            .padding(.vertical, 3)
+                    if let loadError = result.source.loadError {
+                        Section("Load Error") {
+                            Text(loadError)
+                                .textSelection(.enabled)
                         }
                     }
                 }
@@ -666,5 +656,148 @@ private struct DeveloperSourceDetailView: View {
         }
         .navigationTitle(result.source.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if result.source.content != nil {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        isShowingInfo = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .accessibilityLabel("Source information")
+                }
+            }
+        }
+        .sheet(isPresented: $isShowingInfo) {
+            DeveloperSourceInfoView(result: result, query: query)
+                .presentationDetents([.medium, .large])
+        }
+    }
+}
+
+private struct DeveloperSourceInfoView: View {
+    let result: DeveloperSourceSearchResult
+    let query: String
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Source") {
+                    LabeledContent("Name", value: result.source.displayName)
+                    LabeledContent("Type", value: result.source.kind)
+                    LabeledContent("Session", value: result.source.sessionTitle)
+
+                    if result.source.byteCount > 0 {
+                        LabeledContent(
+                            "Indexed Text",
+                            value: ByteCountFormatter.string(
+                                fromByteCount: Int64(result.source.byteCount),
+                                countStyle: .file
+                            )
+                        )
+                    }
+
+                    if let urlString = result.source.urlString {
+                        Text(urlString)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                }
+
+                if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Section("Search") {
+                        LabeledContent("Query", value: query)
+                        LabeledContent("Matches", value: "\(result.matchCount)")
+                    }
+
+                    if !result.snippets.isEmpty {
+                        Section("Match Clues") {
+                            ForEach(Array(result.snippets.enumerated()), id: \.offset) { index, snippet in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Match \(index + 1)")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundColor(.secondary)
+                                    Text(snippet)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .textSelection(.enabled)
+                                }
+                                .padding(.vertical, 3)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Source Info")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct DeveloperSourceCodeTextView: UIViewRepresentable {
+    let sourceID: String
+    let content: String
+    let searchQuery: String
+
+    final class Coordinator {
+        var sourceID: String?
+        var searchQuery = ""
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.backgroundColor = .systemBackground
+        textView.font = UIFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        textView.autocorrectionType = .no
+        textView.autocapitalizationType = .none
+        textView.smartDashesType = .no
+        textView.smartQuotesType = .no
+        textView.smartInsertDeleteType = .no
+        textView.keyboardDismissMode = .interactive
+        textView.alwaysBounceVertical = true
+        textView.textContainerInset = UIEdgeInsets(top: 12, left: 10, bottom: 20, right: 10)
+        textView.textContainer.lineFragmentPadding = 0
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        if context.coordinator.sourceID != sourceID {
+            textView.text = content
+            textView.setContentOffset(.zero, animated: false)
+            context.coordinator.sourceID = sourceID
+            context.coordinator.searchQuery = ""
+        }
+
+        let normalizedQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard context.coordinator.searchQuery != normalizedQuery else { return }
+
+        context.coordinator.searchQuery = normalizedQuery
+        guard !normalizedQuery.isEmpty else {
+            textView.selectedRange = NSRange(location: 0, length: 0)
+            return
+        }
+
+        let range = (textView.text as NSString).range(
+            of: normalizedQuery,
+            options: [.caseInsensitive, .diacriticInsensitive]
+        )
+        guard range.location != NSNotFound else { return }
+
+        textView.selectedRange = range
+        textView.scrollRangeToVisible(range)
     }
 }
