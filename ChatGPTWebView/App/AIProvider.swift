@@ -45,6 +45,10 @@ struct AIProvider: Identifiable, Hashable {
             return false
         }
 
+        if id == .claude, host != "claude.ai" {
+            return false
+        }
+
         let path = url.path.lowercased()
         return !unauthenticatedPathPrefixes.contains { path.hasPrefix($0) }
     }
@@ -97,7 +101,8 @@ struct AIProvider: Identifiable, Hashable {
                 "icloud.com",
                 "microsoft.com",
                 "microsoftonline.com",
-                "live.com"
+                "live.com",
+                "challenges.cloudflare.com"
             ],
             persistentCookieHostSuffixes: ["claude.ai", "claude.com", "anthropic.com", "workos.com"],
             authenticatedHostSuffixes: ["claude.ai"],
@@ -137,7 +142,8 @@ struct AIProvider: Identifiable, Hashable {
                 "gstatic.com",
                 "googleusercontent.com",
                 "apple.com",
-                "icloud.com"
+                "icloud.com",
+                "challenges.cloudflare.com"
             ],
             persistentCookieHostSuffixes: ["grok.com", "x.ai", "x.com", "twitter.com", "twimg.com"],
             authenticatedHostSuffixes: ["grok.com"],
