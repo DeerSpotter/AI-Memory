@@ -24,7 +24,7 @@ on:
         default: "16.0"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-source-ios16-ipa:
@@ -34,60 +34,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
-
-      - name: Apply Grok Google CheckCookie recovery
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 <<'PY'
-          import base64
-          from pathlib import Path
-
-          source_path = Path("ChatGPTWebView/Web/ChatGPTWebViewStore.swift")
-          source = source_path.read_text()
-
-          replacements = [
-              (
-                  "ICAgIHByaXZhdGUgdmFyIGF1dGhQb3B1cFdlYlZpZXdzOiBbT2JqZWN0SWRlbnRpZmllcjogV0tXZWJWaWV3XSA9IFs6XQogICAgcHJpdmF0ZSB2YXIgZ3Jva1BvcHVwc1RoYXRMZWZ0UHJvdmlkZXI6IFNldDxPYmplY3RJZGVudGlmaWVyPiA9IFtdCiAgICBwcml2YXRlIHZhciBjbGF1ZGVTZXNzaW9uQ29va2llU2VlbiA9IGZhbHNlCg==",
-                  "ICAgIHByaXZhdGUgdmFyIGF1dGhQb3B1cFdlYlZpZXdzOiBbT2JqZWN0SWRlbnRpZmllcjogV0tXZWJWaWV3XSA9IFs6XQogICAgcHJpdmF0ZSB2YXIgZ3Jva1BvcHVwc1RoYXRMZWZ0UHJvdmlkZXI6IFNldDxPYmplY3RJZGVudGlmaWVyPiA9IFtdCiAgICBwcml2YXRlIHZhciBncm9rR29vZ2xlQ2hlY2tDb29raWVSZWNvdmVyeUF0dGVtcHRlZDogU2V0PE9iamVjdElkZW50aWZpZXI+ID0gW10KICAgIHByaXZhdGUgdmFyIGNsYXVkZVNlc3Npb25Db29raWVTZWVuID0gZmFsc2UK"
-              ),
-              (
-                  "ICAgICAgICBpZiBpc0F1dGhQb3B1cCh3ZWJWaWV3KSB7CiAgICAgICAgICAgIHRyYWNrQXV0aFBvcHVwTmF2aWdhdGlvbih3ZWJWaWV3LCB1cmw6IHdlYlZpZXcudXJsKQoKICAgICAgICAgICAgaWYgcHJvdmlkZXIuaWQgPT0gLmdyb2ssCiAgICAgICAgICAgICAgIGdyb2tQb3B1cHNUaGF0TGVmdFByb3ZpZGVyLmNvbnRhaW5zKE9iamVjdElkZW50aWZpZXIod2ViVmlldykpLAogICAgICAgICAgICAgICBpc0NvbXBsZXRlZEdyb2tSZXR1cm5VUkwod2ViVmlldy51cmwpIHsKICAgICAgICAgICAgICAgIGNsb3NlQXV0aFBvcHVwKHdlYlZpZXcpCiAgICAgICAgICAgICAgICBjb21wbGV0ZVByb3ZpZGVyQXV0aGVudGljYXRpb24oKQogICAgICAgICAgICB9CiAgICAgICAgICAgIHJldHVybgogICAgICAgIH0K",
-                  "ICAgICAgICBpZiBpc0F1dGhQb3B1cCh3ZWJWaWV3KSB7CiAgICAgICAgICAgIHRyYWNrQXV0aFBvcHVwTmF2aWdhdGlvbih3ZWJWaWV3LCB1cmw6IHdlYlZpZXcudXJsKQoKICAgICAgICAgICAgaWYgcHJvdmlkZXIuaWQgPT0gLmdyb2ssCiAgICAgICAgICAgICAgIGlzR29vZ2xlQ2hlY2tDb29raWVVUkwod2ViVmlldy51cmwpIHsKICAgICAgICAgICAgICAgIHJlc3VtZUdyb2tHb29nbGVDaGVja0Nvb2tpZUlmTmVlZGVkKGluOiB3ZWJWaWV3KQogICAgICAgICAgICAgICAgcmV0dXJuCiAgICAgICAgICAgIH0KCiAgICAgICAgICAgIGlmIHByb3ZpZGVyLmlkID09IC5ncm9rLAogICAgICAgICAgICAgICBncm9rUG9wdXBzVGhhdExlZnRQcm92aWRlci5jb250YWlucyhPYmplY3RJZGVudGlmaWVyKHdlYlZpZXcpKSwKICAgICAgICAgICAgICAgaXNDb21wbGV0ZWRHcm9rUmV0dXJuVVJMKHdlYlZpZXcudXJsKSB7CiAgICAgICAgICAgICAgICBjbG9zZUF1dGhQb3B1cCh3ZWJWaWV3KQogICAgICAgICAgICAgICAgY29tcGxldGVQcm92aWRlckF1dGhlbnRpY2F0aW9uKCkKICAgICAgICAgICAgfQogICAgICAgICAgICByZXR1cm4KICAgICAgICB9Cg=="
-              ),
-              (
-                  "ICAgICAgICBhdXRoUG9wdXBXZWJWaWV3cy5yZW1vdmVWYWx1ZShmb3JLZXk6IHBvcHVwSUQpCiAgICAgICAgZ3Jva1BvcHVwc1RoYXRMZWZ0UHJvdmlkZXIucmVtb3ZlKHBvcHVwSUQpCiAgICB9CgogICAgcHJpdmF0ZSBmdW5jIGNvbXBsZXRlUHJvdmlkZXJBdXRoZW50aWNhdGlvbigpIHsK",
-                  "ICAgICAgICBhdXRoUG9wdXBXZWJWaWV3cy5yZW1vdmVWYWx1ZShmb3JLZXk6IHBvcHVwSUQpCiAgICAgICAgZ3Jva1BvcHVwc1RoYXRMZWZ0UHJvdmlkZXIucmVtb3ZlKHBvcHVwSUQpCiAgICAgICAgZ3Jva0dvb2dsZUNoZWNrQ29va2llUmVjb3ZlcnlBdHRlbXB0ZWQucmVtb3ZlKHBvcHVwSUQpCiAgICB9CgogICAgcHJpdmF0ZSBmdW5jIGlzR29vZ2xlQ2hlY2tDb29raWVVUkwoXyB1cmw6IFVSTD8pIC0+IEJvb2wgewogICAgICAgIGd1YXJkIGxldCB1cmwsCiAgICAgICAgICAgICAgdXJsLmhvc3Q/Lmxvd2VyY2FzZWQoKSA9PSAiYWNjb3VudHMuZ29vZ2xlLmNvbSIgZWxzZSB7CiAgICAgICAgICAgIHJldHVybiBmYWxzZQogICAgICAgIH0KCiAgICAgICAgcmV0dXJuIHVybC5wYXRoLmNhc2VJbnNlbnNpdGl2ZUNvbXBhcmUoIi9DaGVja0Nvb2tpZSIpID09IC5vcmRlcmVkU2FtZQogICAgfQoKICAgIHByaXZhdGUgZnVuYyByZXN1bWVHcm9rR29vZ2xlQ2hlY2tDb29raWVJZk5lZWRlZChpbiB3ZWJWaWV3OiBXS1dlYlZpZXcpIHsKICAgICAgICBsZXQgcG9wdXBJRCA9IE9iamVjdElkZW50aWZpZXIod2ViVmlldykKICAgICAgICBndWFyZCAhZ3Jva0dvb2dsZUNoZWNrQ29va2llUmVjb3ZlcnlBdHRlbXB0ZWQuY29udGFpbnMocG9wdXBJRCkgZWxzZSB7CiAgICAgICAgICAgIHJldHVybgogICAgICAgIH0KCiAgICAgICAgbGV0IGNoZWNrQ29va2llVVJMID0gd2ViVmlldy51cmwKCiAgICAgICAgRGlzcGF0Y2hRdWV1ZS5tYWluLmFzeW5jQWZ0ZXIoZGVhZGxpbmU6IC5ub3coKSArIDAuNSkgeyBbd2VhayBzZWxmLCB3ZWFrIHdlYlZpZXddIGluCiAgICAgICAgICAgIGd1YXJkIGxldCBzZWxmLAogICAgICAgICAgICAgICAgICBsZXQgd2ViVmlldywKICAgICAgICAgICAgICAgICAgc2VsZi5pc0F1dGhQb3B1cCh3ZWJWaWV3KSwKICAgICAgICAgICAgICAgICAgc2VsZi5pc0dvb2dsZUNoZWNrQ29va2llVVJMKHdlYlZpZXcudXJsKSwKICAgICAgICAgICAgICAgICAgd2ViVmlldy51cmwgPT0gY2hlY2tDb29raWVVUkwsCiAgICAgICAgICAgICAgICAgICF3ZWJWaWV3LmlzTG9hZGluZywKICAgICAgICAgICAgICAgICAgIXNlbGYuZ3Jva0dvb2dsZUNoZWNrQ29va2llUmVjb3ZlcnlBdHRlbXB0ZWQuY29udGFpbnMocG9wdXBJRCkgZWxzZSB7CiAgICAgICAgICAgICAgICByZXR1cm4KICAgICAgICAgICAgfQoKICAgICAgICAgICAgc2VsZi5ncm9rR29vZ2xlQ2hlY2tDb29raWVSZWNvdmVyeUF0dGVtcHRlZC5pbnNlcnQocG9wdXBJRCkKCiAgICAgICAgICAgIGxldCBzdWJtaXRTY3JpcHQgPSAjIiIiCiAgICAgICAgICAgICgoKSA9PiB7CiAgICAgICAgICAgICAgY29uc3QgZm9ybSA9IGRvY3VtZW50LmZvcm1zICYmIGRvY3VtZW50LmZvcm1zWzBdOwogICAgICAgICAgICAgIGlmICghZm9ybSkgcmV0dXJuIGZhbHNlOwogICAgICAgICAgICAgIEhUTUxGb3JtRWxlbWVudC5wcm90b3R5cGUuc3VibWl0LmNhbGwoZm9ybSk7CiAgICAgICAgICAgICAgcmV0dXJuIHRydWU7CiAgICAgICAgICAgIH0pKCk7CiAgICAgICAgICAgICIiIiMKCiAgICAgICAgICAgIHdlYlZpZXcuZXZhbHVhdGVKYXZhU2NyaXB0KHN1Ym1pdFNjcmlwdCwgY29tcGxldGlvbkhhbmRsZXI6IG5pbCkKICAgICAgICB9CiAgICB9CgogICAgcHJpdmF0ZSBmdW5jIGNvbXBsZXRlUHJvdmlkZXJBdXRoZW50aWNhdGlvbigpIHsK"
-              )
-          ]
-
-          for old_b64, new_b64 in replacements:
-              old = base64.b64decode(old_b64).decode()
-              new = base64.b64decode(new_b64).decode()
-              if new not in source:
-                  if old not in source:
-                      raise SystemExit("Expected Grok CheckCookie patch anchor was not found")
-                  source = source.replace(old, new, 1)
-
-          source_path.write_text(source)
-
-          project_path = Path("project.yml")
-          project = project_path.read_text()
-          if 'CURRENT_PROJECT_VERSION: "35"' in project:
-              project = project.replace('CURRENT_PROJECT_VERSION: "35"', 'CURRENT_PROJECT_VERSION: "36"', 1)
-          elif 'CURRENT_PROJECT_VERSION: "36"' not in project:
-              raise SystemExit("Unexpected project build number")
-          project_path.write_text(project)
-          PY
-
-      - name: Commit Grok CheckCookie recovery
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: Recover stalled Grok Google CheckCookie redirect
-          branch: codex/multi-ai-architecture
-          file_pattern: ChatGPTWebView/Web/ChatGPTWebViewStore.swift project.yml
 
       - name: Show Xcode version
         run: |
