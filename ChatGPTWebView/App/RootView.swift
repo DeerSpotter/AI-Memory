@@ -325,6 +325,7 @@ private struct SettingsView: View {
     @ObservedObject var updateChecker: AppUpdateChecker
     @EnvironmentObject private var providerManager: AIProviderManager
     @EnvironmentObject private var launchSettings: MemoryLaunchSettings
+    @EnvironmentObject private var chatPerformanceSettings: ChatPerformanceSettings
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -340,6 +341,47 @@ private struct SettingsView: View {
                     Text("AI Providers")
                 } footer: {
                     Text("Choose which AIs are available throughout ContextPort. At least one AI must remain enabled.")
+                }
+
+                Section {
+                    Toggle("Optimize Long Chats", isOn: $chatPerformanceSettings.isEnabled)
+
+                    Stepper(
+                        value: $chatPerformanceSettings.visibleMessageLimit,
+                        in: ChatPerformanceSettings.visibleMessageRange,
+                        step: ChatPerformanceSettings.visibleMessageStep
+                    ) {
+                        HStack {
+                            Text("Visible Messages")
+                            Spacer()
+                            Text("\(chatPerformanceSettings.visibleMessageLimit)")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .disabled(!chatPerformanceSettings.isEnabled)
+
+                    Text("Optimize On")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    ForEach(providerManager.allProviders) { provider in
+                        Toggle(isOn: performanceProviderBinding(provider.id)) {
+                            HStack(spacing: 8) {
+                                Image(systemName: provider.systemImage)
+                                    .frame(width: 22)
+                                Text(provider.displayName)
+                                if provider.id == .grok {
+                                    Text("Experimental")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Chat Performance")
+                } footer: {
+                    Text("Keeps only the newest messages visible in long chats. Older loaded messages remain in the page for Save Context and are revealed 10 at a time as you scroll upward.")
                 }
 
                 Section("Memory Sharing") {
@@ -373,6 +415,17 @@ private struct SettingsView: View {
             },
             set: { isEnabled in
                 providerManager.setProviderEnabled(providerID, enabled: isEnabled)
+            }
+        )
+    }
+
+    private func performanceProviderBinding(_ providerID: AIProviderID) -> Binding<Bool> {
+        Binding(
+            get: {
+                chatPerformanceSettings.isProviderEnabled(providerID)
+            },
+            set: { isEnabled in
+                chatPerformanceSettings.setProviderEnabled(providerID, enabled: isEnabled)
             }
         )
     }
