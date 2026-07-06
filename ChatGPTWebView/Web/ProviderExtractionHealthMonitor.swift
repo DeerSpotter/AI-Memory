@@ -100,7 +100,7 @@ struct ProviderExtractionHealthMonitor {
         let state: ProviderExtractionHealthReport.State
         if diagnostics.challengeDetected || userTurnCount == 0 || assistantTurnCount == 0 {
             state = .unsafe
-        } else if diagnostics.usedFallback || !missing.isEmpty || diagnostics.unclassifiedCandidateCount > 0 {
+        } else if diagnostics.usedFallback || !missing.isEmpty {
             state = .safeDrift
         } else {
             state = .healthy
