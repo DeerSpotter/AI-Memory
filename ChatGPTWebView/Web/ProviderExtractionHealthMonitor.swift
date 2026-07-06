@@ -199,8 +199,12 @@ enum ProviderExtractionHealthAlertPresenter {
         presenter.present(alert, animated: true)
     }
 
+    private static func topViewController() -> UIViewController? {
+        topViewController(from: activeWindowRootViewController())
+    }
+
     private static func topViewController(
-        from base: UIViewController? = activeWindowRootViewController()
+        from base: UIViewController?
     ) -> UIViewController? {
         if let navigationController = base as? UINavigationController {
             return topViewController(from: navigationController.visibleViewController)
