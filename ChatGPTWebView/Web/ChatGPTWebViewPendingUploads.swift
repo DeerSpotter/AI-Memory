@@ -441,11 +441,37 @@ extension ChatGPTWebViewStore {
           if (!transfer.files || transfer.files.length === 0) return false;
 
           const attachmentVisible = () => {
-            const attachmentHints = Array.from(document.querySelectorAll('[data-testid], [aria-label], a, button, div, span'))
-              .map((el) => [el.innerText, el.textContent, el.getAttribute('aria-label'), el.getAttribute('data-testid')].filter(Boolean).join(' '))
+            const attachmentHints = Array.from(document.querySelectorAll('[data-testid], [aria-label], [data-filename], [title], [alt], a, button, div, span'))
+              .map((el) => [
+                el.innerText,
+                el.textContent,
+                el.getAttribute('aria-label'),
+                el.getAttribute('data-testid'),
+                el.getAttribute('data-filename'),
+                el.getAttribute('title'),
+                el.getAttribute('alt'),
+                el.getAttribute('name'),
+                el.getAttribute('value')
+              ].filter(Boolean).join(' '))
               .join(' ')
               .toLowerCase();
-            return bridge.files.every((record) => attachmentHints.includes(record.name.toLowerCase()));
+            const attachmentHTML = String(document.documentElement?.innerHTML || '').toLowerCase();
+            return bridge.files.every((record) => {
+              const name = record.name.toLowerCase();
+              return attachmentHints.includes(name) || attachmentHTML.includes(name);
+            });
+          };
+
+          const fileListMatches = (fileList) => {
+            const actualFiles = Array.from(fileList || []);
+            if (actualFiles.length !== files.length) return false;
+            return files.every((file, index) => {
+              const actual = actualFiles[index];
+              return actual
+                && actual.name === file.name
+                && actual.size === file.size
+                && String(actual.type || '') === String(file.type || '');
+            });
           };
 
           const composer = findComposer();
@@ -456,8 +482,17 @@ extension ChatGPTWebViewStore {
           if (input) {
             try {
               input.files = transfer.files;
+              const browserAcceptedExactFiles = fileListMatches(input.files)
+                && (files.length === 1 || input.multiple);
               input.dispatchEvent(new Event('input', { bubbles: true }));
               input.dispatchEvent(new Event('change', { bubbles: true }));
+
+              if (browserAcceptedExactFiles) {
+                closeTransientMenus();
+                await wait(250);
+                return true;
+              }
+
               for (let attempt = 0; attempt < 12; attempt++) {
                 await wait(250);
                 if (attachmentVisible()) {
