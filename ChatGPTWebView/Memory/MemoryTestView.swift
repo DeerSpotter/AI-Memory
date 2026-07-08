@@ -89,7 +89,7 @@ struct MemoryTestView: View {
                         let entries = appModel.localMemoryEntries.filter { selectedEntryIDs.contains($0.id) }
                         launchRequest = MemoryLaunchRequest(entries: entries)
                     } label: {
-                        Text("Start New Chat · \(selectedEntryIDs.count)")
+                        Text("Share Context · \(selectedEntryIDs.count)")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
