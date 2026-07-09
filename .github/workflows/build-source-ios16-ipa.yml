@@ -37,9 +37,19 @@ jobs:
       - name: Apply validated provider patch
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
+          mkdir -p build
           test -f .github/deepseek-provider-patch.py
-          python3 .github/deepseek-provider-patch.py
+          python3 .github/deepseek-provider-patch.py 2>&1 | tee build/deepseek-patch.log
+
+      - name: Upload patch diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContextPort-deepseek-patch-error
+          path: build/deepseek-patch.log
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Remove temporary helpers and restore canonical workflow
         shell: bash
