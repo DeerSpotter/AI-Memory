@@ -71,18 +71,46 @@ struct DeveloperSourcesView: View {
                     .disabled(!model.canRunNestedPass || isSavingToMemory)
 
                     Button {
-                        model.runSourceMapPass()
+                        model.runSourceMapDiscovery()
+                    } label: {
+                        Label(
+                            stageComplete(.sourceMapDiscovery)
+                                ? "Step 4A Complete · Map Candidates"
+                                : "Step 4A · Discover SourceMaps",
+                            systemImage: stageComplete(.sourceMapDiscovery)
+                                ? "checkmark.circle.fill"
+                                : "a.circle"
+                        )
+                    }
+                    .disabled(!model.canRunSourceMapDiscovery || isSavingToMemory)
+
+                    Button {
+                        model.runSourceMapValidation()
+                    } label: {
+                        Label(
+                            stageComplete(.sourceMapValidation)
+                                ? "Step 4B Complete · Validated Maps"
+                                : "Step 4B · Validate SourceMaps",
+                            systemImage: stageComplete(.sourceMapValidation)
+                                ? "checkmark.circle.fill"
+                                : "b.circle"
+                        )
+                    }
+                    .disabled(!model.canRunSourceMapValidation || isSavingToMemory)
+
+                    Button {
+                        model.runSourceMapDecode()
                     } label: {
                         Label(
                             stageComplete(.sourceMaps)
-                                ? "Step 4 Complete · SourceMaps"
-                                : "Step 4 · Recover SourceMaps",
+                                ? "Step 4C Complete · Decoded Sources"
+                                : "Step 4C · Decode Original Sources",
                             systemImage: stageComplete(.sourceMaps)
                                 ? "checkmark.circle.fill"
-                                : "4.circle"
+                                : "c.circle"
                         )
                     }
-                    .disabled(!model.canRunSourceMaps || isSavingToMemory)
+                    .disabled(!model.canRunSourceMapDecode || isSavingToMemory)
 
                     Button {
                         saveSourcesToMemory()
@@ -101,7 +129,7 @@ struct DeveloperSourcesView: View {
                 } header: {
                     Text("Source Inspector")
                 } footer: {
-                    Text("Developer Sources now runs only when you press a numbered step. Step 1 captures the loaded browser inventory. Step 2 reconciles late runtime and bundler references. Step 3 follows one strict nested dependency depth. Step 4 performs sequential bounded SourceMap recovery. Each step must finish before the next button unlocks. Re-running Step 1 discards the current in-memory capture and starts clean. Source text is capped at 32 MB across the complete four-step capture; oversized resources remain as metadata instead of terminating the AI WebView.")
+                    Text("Developer Sources runs only when you press a numbered step. Step 1 captures the loaded browser inventory. Step 2 reconciles late runtime and bundler references. Step 3 follows one strict nested dependency depth. Step 4A discovers SourceMap candidates without downloading external maps. Step 4B validates one map at a time and caches validated JSON to temporary files. Step 4C reopens one validated map at a time and fully decodes embedded sourcesContent into original source entries. Each child step must finish before the next unlocks. Full decoding is preserved while peak memory is separated across user-controlled stages.")
                 }
 
                 Section("Sources") {
