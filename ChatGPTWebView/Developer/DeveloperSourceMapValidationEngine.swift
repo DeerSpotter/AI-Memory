@@ -190,7 +190,7 @@ enum DeveloperSourceMapValidationEngine {
                 return .failure(.httpStatus(response.statusCode))
             }
             return .success(.init(mapURLString: canonical, data: loaded.data))
-        } catch let error as DeveloperSourceBoundedLoaderror {
+        } catch let error as DeveloperSourceBoundedLoadError {
             return .failure(.responseTooLarge(error.byteCount))
         } catch {
             return .failure(.requestFailed(error.localizedDescription))
