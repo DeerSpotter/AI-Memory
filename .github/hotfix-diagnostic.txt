@@ -1,3 +1,10 @@
+decoded_patch_bytes= 35594
+decode_exit_status=0
+/tmp/contextport_hotfix_patch.py:441: SyntaxWarning: "\(" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\("? A raw string is also an option.
+  "Discovery: \(validated.candidate.discovery)",
+/tmp/contextport_hotfix_patch.py:469: SyntaxWarning: "\(" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\("? A raw string is also an option.
+  "Discovery: \(validated.candidate.discovery)",
+ContextPort ChatGPT 2.9.1 hotfix patch applied
 patch_exit_status=0
 
 === swift parse: ChatGPTWebView/Developer/DeveloperSourcesModel.swift ===
@@ -19,25 +26,26 @@ swift_parse_exit_status=0
 swift_parse_exit_status=0
 
 === swift parse: ChatGPTWebView/Web/ChatGPTConversationMapCapture.swift ===
-<unknown>:0: error: error opening input file 'ChatGPTWebView/Web/ChatGPTConversationMapCapture.swift' (No such file or directory)
-swift_parse_exit_status=1
+swift_parse_exit_status=0
 
 === swift parse: ChatGPTWebView/Web/ChatGPTConversationExporter.swift ===
 swift_parse_exit_status=0
 
 === extract map capture script ===
-Traceback (most recent call last):
-  File "<stdin>", line 2, in <module>
-  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 787, in read_text
-    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
-         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 771, in open
-    return io.open(self, mode, buffering, encoding, errors, newline)
-           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-FileNotFoundError: [Errno 2] No such file or directory: 'ChatGPTWebView/Web/ChatGPTConversationMapCapture.swift'
-extract_exit_status=1
+capture_script_found= True
+extract_exit_status=0
+node_check_exit_status=0
 
 === diff check ===
 diff_check_exit_status=0
 
 === changed paths ===
+ M ChatGPTWebView/Developer/DeveloperSourceBrowserInventory.swift
+ M ChatGPTWebView/Developer/DeveloperSourceMapRecovery.swift
+ M ChatGPTWebView/Developer/DeveloperSourceMemoryArchive.swift
+ M ChatGPTWebView/Developer/DeveloperSourcesModel.swift
+ M ChatGPTWebView/Web/ChatGPTConversationExporter.swift
+ M ChatGPTWebView/Web/ChatGPTWebViewChatPerformance.swift
+ M ChatGPTWebView/Web/ChatGPTWebViewLatestExchange.swift
+ M project.yml
+?? ChatGPTWebView/Web/ChatGPTConversationMapCapture.swift
