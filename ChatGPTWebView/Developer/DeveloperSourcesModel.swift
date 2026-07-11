@@ -74,21 +74,59 @@ struct DeveloperSourceSecondPassInventory: Sendable {
     let inlineFiles: [DeveloperSourceFile]
 }
 
+enum DeveloperSourceCaptureStage: Int, Sendable {
+    case none = 0
+    case firstPass = 1
+    case secondPass = 2
+    case nestedDependencies = 3
+    case sourceMaps = 4
+}
+
 @MainActor
 final class DeveloperSourcesModel: ObservableObject {
     @Published private(set) var results: [DeveloperSourceSearchResult] = []
     @Published private(set) var isScanning = false
     @Published private(set) var isSearching = false
-    @Published private(set) var status = "Open the Dev tab to inspect loaded source files."
+    @Published private(set) var status = "Run Step 1 to capture loaded sources. Later stages remain disabled until the prior stage completes."
     @Published private(set) var snapshotFingerprint: String?
+    @Published private(set) var completedStage: DeveloperSourceCaptureStage = .none
+
+    private struct SessionCaptureState {
+        let session: DeveloperWebViewSession
+        let page: DeveloperDiscoveredPage
+        let cookieHeader: String?
+        var firstPassFiles: [DeveloperSourceFile]
+        var secondPassFiles: [DeveloperSourceFile] = []
+        var nestedPassFiles: [DeveloperSourceFile] = []
+        var sourceMapFiles: [DeveloperSourceFile] = []
+    }
 
     private var sources: [DeveloperSourceFile] = []
+    private var captureStates: [SessionCaptureState] = []
+    private var captureErrors: [DeveloperSourceFile] = []
+    private var captureBudget = DeveloperSourceCaptureBudget()
     private var scanTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var currentQuery = ""
 
     var hasSources: Bool {
         !sources.isEmpty
+    }
+
+    var canRunFirstPass: Bool {
+        !isScanning
+    }
+
+    var canRunSecondPass: Bool {
+        completedStage == .firstPass && !isScanning
+    }
+
+    var canRunNestedPass: Bool {
+        completedStage == .secondPass && !isScanning
+    }
+
+    var canRunSourceMaps: Bool {
+        completedStage == .nestedDependencies && !isScanning
     }
 
     func archiveSnapshot() -> [DeveloperSourceArchiveItem] {
@@ -108,174 +146,245 @@ final class DeveloperSourcesModel: ObservableObject {
         }
     }
 
+    func markSnapshotFingerprint(_ fingerprint: String) {
+        snapshotFingerprint = fingerprint
+    }
+
     func scanIfNeeded(sessions: [DeveloperWebViewSession]) {
-        guard sources.isEmpty, !isScanning else { return }
-        scan(sessions: sessions)
+        // Capture is deliberately manual. Opening the Dev tab must not start a source pull.
     }
 
     func scan(sessions: [DeveloperWebViewSession]) {
+        runFirstPass(sessions: sessions)
+    }
+
+    func runFirstPass(sessions: [DeveloperWebViewSession]) {
         scanTask?.cancel()
         searchTask?.cancel()
+
         sources.removeAll(keepingCapacity: false)
         results.removeAll(keepingCapacity: false)
+        captureStates.removeAll(keepingCapacity: false)
+        captureErrors.removeAll(keepingCapacity: false)
+        captureBudget = DeveloperSourceCaptureBudget()
+        completedStage = .none
         snapshotFingerprint = nil
         isSearching = false
 
         guard !sessions.isEmpty else {
             isScanning = false
-            status = "No loaded AI browser sessions were found. Open an AI tab, then refresh Sources."
+            status = "No loaded AI browser sessions were found. Open an AI tab, then run Step 1 again."
             return
         }
 
-        isScanning = true
-        status = "Reading first-pass source inventories..."
+        beginStage("Step 1 of 4: capturing loaded scripts, styles, runtime resources, and bounded inline scripts...")
 
         scanTask = Task { [weak self] in
             guard let self else { return }
-
             await DeveloperSourceResponseMetadataRegistry.shared.clear()
 
-            var collected: [DeveloperSourceFile] = []
-            var scannedSessionCount = 0
-            var firstPassCount = 0
-            var secondPassCount = 0
-            var nestedPassCount = 0
-            var validatedSourceMapCount = 0
-            var originalSourceCount = 0
+            var states: [SessionCaptureState] = []
+            var errors: [DeveloperSourceFile] = []
 
             for session in sessions {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    self.isScanning = false
+                    return
+                }
 
                 do {
                     let cookieHeader = await developerCookieHeader(for: session.webView)
-                    let firstPage = try await discoverDeveloperSources(in: session.webView)
-                    scannedSessionCount += 1
-
-                    let firstExternalDescriptors = firstPage.sources.filter {
+                    let page = try await discoverDeveloperSources(in: session.webView)
+                    let externalDescriptors = page.sources.filter {
                         $0.inlineSourceIndex == nil && $0.inlineSource == nil && $0.url != nil
                     }
-                    let firstExternal = await loadExternalDeveloperSources(
-                        firstExternalDescriptors,
+                    let externalFiles = await loadExternalDeveloperSources(
+                        externalDescriptors,
                         sessionID: session.id,
                         sessionTitle: session.title,
-                        pageURL: firstPage.pageURL,
+                        pageURL: page.pageURL,
                         userAgent: session.webView.customUserAgent,
-                        cookieHeader: cookieHeader
+                        cookieHeader: cookieHeader,
+                        budget: self.captureBudget
                     )
-                    collected.append(contentsOf: firstExternal)
 
-                    guard !Task.isCancelled else { return }
-                    self.status = "Reading inline sources in bounded chunks..."
+                    guard !Task.isCancelled else {
+                        self.isScanning = false
+                        return
+                    }
 
-                    let firstInline = await loadDeveloperInlineSourceFiles(
-                        from: firstPage.sources,
+                    self.status = "Step 1 of 4: reading inline scripts from \(session.title) in bounded chunks..."
+                    let inlineFiles = await loadBudgetedDeveloperInlineSources(
+                        from: page.sources,
                         session: session,
-                        pageURL: firstPage.pageURL
-                    )
-                    collected.append(contentsOf: firstInline)
-
-                    let firstPassSessionFiles = firstExternal + firstInline
-                    firstPassCount += firstPassSessionFiles.count
-
-                    guard !Task.isCancelled else { return }
-                    self.status = "Reconciling runtime and referenced sources..."
-
-                    try? await Task.sleep(nanoseconds: 250_000_000)
-                    let latePage = try? await discoverDeveloperSources(in: session.webView)
-                    let secondInventory = DeveloperSourceSecondPassScanner.discover(
-                        firstPage: firstPage,
-                        latePage: latePage,
-                        firstPassFiles: firstPassSessionFiles,
-                        sessionID: session.id,
-                        sessionTitle: session.title,
-                        pageURL: firstPage.pageURL
+                        pageURL: page.pageURL,
+                        budget: self.captureBudget
                     )
 
-                    collected.append(contentsOf: secondInventory.inlineFiles)
-                    let secondExternal = await loadExternalDeveloperSources(
-                        secondInventory.externalDescriptors,
-                        sessionID: session.id,
-                        sessionTitle: session.title,
-                        pageURL: firstPage.pageURL,
-                        userAgent: session.webView.customUserAgent,
-                        cookieHeader: cookieHeader
-                    )
-                    collected.append(contentsOf: secondExternal)
-                    secondPassCount += secondInventory.inlineFiles.count + secondExternal.count
-
-                    guard !Task.isCancelled else { return }
-                    self.status = "Reconciling nested bundler dependencies..."
-
-                    let nestedDescriptors = DeveloperSourceNestedPassScanner.discover(
-                        firstPassFiles: firstPassSessionFiles,
-                        secondPassFiles: secondExternal,
-                        existingFiles: firstPassSessionFiles + secondInventory.inlineFiles + secondExternal
-                    )
-                    let nestedExternal = await loadExternalDeveloperSources(
-                        nestedDescriptors,
-                        sessionID: session.id,
-                        sessionTitle: session.title,
-                        pageURL: firstPage.pageURL,
-                        userAgent: session.webView.customUserAgent,
-                        cookieHeader: cookieHeader
-                    )
-                    collected.append(contentsOf: nestedExternal)
-                    nestedPassCount += nestedExternal.count
-
-                    guard !Task.isCancelled else { return }
-                    self.status = "Recovering validated SourceMaps and original sources..."
-
-                    let sourceMapInputs = firstPassSessionFiles
-                        + secondInventory.inlineFiles
-                        + secondExternal
-                        + nestedExternal
-                    let sourceMapRecovery = await DeveloperSourceMapRecovery.recover(
-                        from: sourceMapInputs,
-                        sessionID: session.id,
-                        sessionTitle: session.title,
-                        pageURL: firstPage.pageURL,
-                        userAgent: session.webView.customUserAgent,
-                        cookieHeader: cookieHeader
-                    )
-                    collected.append(contentsOf: sourceMapRecovery.mapFiles)
-                    collected.append(contentsOf: sourceMapRecovery.originalSourceFiles)
-                    validatedSourceMapCount += sourceMapRecovery.mapFiles.count
-                    originalSourceCount += sourceMapRecovery.originalSourceFiles.count
-                } catch {
-                    collected.append(
-                        DeveloperSourceFile(
-                            id: "\(session.id)::scan-error",
-                            sessionTitle: session.title,
-                            pageURL: session.webView.url?.absoluteString ?? "",
-                            displayName: "Source inventory unavailable",
-                            urlString: nil,
-                            kind: "Scan Error",
-                            content: nil,
-                            metadataNote: nil,
-                            resourceByteCount: nil,
-                            loadError: error.localizedDescription
+                    states.append(
+                        SessionCaptureState(
+                            session: session,
+                            page: page,
+                            cookieHeader: cookieHeader,
+                            firstPassFiles: externalFiles + inlineFiles
                         )
                     )
+                } catch {
+                    errors.append(self.scanErrorFile(for: session, error: error))
                 }
+
+                await Task.yield()
             }
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                self.isScanning = false
+                return
+            }
 
-            let preferredForDeduplication = collected.sorted {
-                sourcePreference($0) > sourcePreference($1)
-            }
-            self.sources = DeveloperSourceSecondPassScanner.deduplicate(preferredForDeduplication).sorted {
-                if $0.sessionTitle == $1.sessionTitle {
-                    return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-                }
-                return $0.sessionTitle.localizedCaseInsensitiveCompare($1.sessionTitle) == .orderedAscending
-            }
-            self.snapshotFingerprint = DeveloperSourceMemoryArchiveBuilder.fingerprint(
-                for: self.archiveSnapshot()
+            self.captureStates = states
+            self.captureErrors = errors
+            self.completedStage = .firstPass
+            await self.finishStage(
+                prefix: "Step 1 complete.",
+                nextInstruction: "Review the captured sources, then run Step 2 when ready."
             )
-            self.isScanning = false
-            self.status = "Indexed \(self.sources.count) sources from \(scannedSessionCount) loaded session\(scannedSessionCount == 1 ? "" : "s") • \(firstPassCount) first pass • \(secondPassCount) second pass • \(nestedPassCount) nested dependencies • \(validatedSourceMapCount) validated SourceMaps • \(originalSourceCount) original sources. Kept until ContextPort closes."
-            self.scheduleSearch(self.currentQuery)
+        }
+    }
+
+    func runSecondPass() {
+        guard canRunSecondPass else { return }
+        beginStage("Step 2 of 4: reconciling late runtime resources and explicit bundler references...")
+
+        scanTask = Task { [weak self] in
+            guard let self else { return }
+            var updatedStates: [SessionCaptureState] = []
+
+            for var state in self.captureStates {
+                guard !Task.isCancelled else {
+                    self.isScanning = false
+                    return
+                }
+
+                let latePage = try? await discoverDeveloperSources(in: state.session.webView)
+                let descriptors = DeveloperSourceManualSecondPassScanner.discover(
+                    firstPage: state.page,
+                    latePage: latePage,
+                    firstPassFiles: state.firstPassFiles
+                )
+                state.secondPassFiles = await loadExternalDeveloperSources(
+                    descriptors,
+                    sessionID: state.session.id,
+                    sessionTitle: state.session.title,
+                    pageURL: state.page.pageURL,
+                    userAgent: state.session.webView.customUserAgent,
+                    cookieHeader: state.cookieHeader,
+                    budget: self.captureBudget
+                )
+                updatedStates.append(state)
+                await Task.yield()
+            }
+
+            guard !Task.isCancelled else {
+                self.isScanning = false
+                return
+            }
+
+            self.captureStates = updatedStates
+            self.completedStage = .secondPass
+            await self.finishStage(
+                prefix: "Step 2 complete.",
+                nextInstruction: "Review the added runtime and bundler sources, then run Step 3 when ready."
+            )
+        }
+    }
+
+    func runNestedPass() {
+        guard canRunNestedPass else { return }
+        beginStage("Step 3 of 4: scanning resolved bundler chunks for one bounded dependency depth...")
+
+        scanTask = Task { [weak self] in
+            guard let self else { return }
+            var updatedStates: [SessionCaptureState] = []
+
+            for var state in self.captureStates {
+                guard !Task.isCancelled else {
+                    self.isScanning = false
+                    return
+                }
+
+                let existingFiles = state.firstPassFiles + state.secondPassFiles
+                let descriptors = DeveloperSourceNestedPassScanner.discover(
+                    firstPassFiles: state.firstPassFiles,
+                    secondPassFiles: state.secondPassFiles,
+                    existingFiles: existingFiles
+                )
+                state.nestedPassFiles = await loadExternalDeveloperSources(
+                    descriptors,
+                    sessionID: state.session.id,
+                    sessionTitle: state.session.title,
+                    pageURL: state.page.pageURL,
+                    userAgent: state.session.webView.customUserAgent,
+                    cookieHeader: state.cookieHeader,
+                    budget: self.captureBudget
+                )
+                updatedStates.append(state)
+                await Task.yield()
+            }
+
+            guard !Task.isCancelled else {
+                self.isScanning = false
+                return
+            }
+
+            self.captureStates = updatedStates
+            self.completedStage = .nestedDependencies
+            await self.finishStage(
+                prefix: "Step 3 complete.",
+                nextInstruction: "Review the nested dependencies, then run Step 4 only when SourceMap recovery is needed."
+            )
+        }
+    }
+
+    func runSourceMapPass() {
+        guard canRunSourceMaps else { return }
+        beginStage("Step 4 of 4: recovering validated SourceMaps sequentially under the remaining capture budget...")
+
+        scanTask = Task { [weak self] in
+            guard let self else { return }
+            var updatedStates: [SessionCaptureState] = []
+
+            for var state in self.captureStates {
+                guard !Task.isCancelled else {
+                    self.isScanning = false
+                    return
+                }
+
+                let inputs = state.firstPassFiles + state.secondPassFiles + state.nestedPassFiles
+                let recovered = await DeveloperSourceSafeMapRecovery.recover(
+                    from: inputs,
+                    sessionID: state.session.id,
+                    sessionTitle: state.session.title,
+                    pageURL: state.page.pageURL,
+                    userAgent: state.session.webView.customUserAgent,
+                    cookieHeader: state.cookieHeader,
+                    budget: self.captureBudget
+                )
+                state.sourceMapFiles = recovered.mapFiles + recovered.originalSourceFiles
+                updatedStates.append(state)
+                await Task.yield()
+            }
+
+            guard !Task.isCancelled else {
+                self.isScanning = false
+                return
+            }
+
+            self.captureStates = updatedStates
+            self.completedStage = .sourceMaps
+            await self.finishStage(
+                prefix: "Step 4 complete.",
+                nextInstruction: "The manual source capture is complete. Save the current snapshot to Memory when ready."
+            )
         }
     }
 
@@ -312,6 +421,65 @@ final class DeveloperSourcesModel: ObservableObject {
             self.results = searchedResults
             self.isSearching = false
         }
+    }
+
+    private func beginStage(_ message: String) {
+        searchTask?.cancel()
+        isSearching = false
+        isScanning = true
+        snapshotFingerprint = nil
+        status = message
+    }
+
+    private func finishStage(prefix: String, nextInstruction: String) async {
+        let collected = captureStates.flatMap {
+            $0.firstPassFiles + $0.secondPassFiles + $0.nestedPassFiles + $0.sourceMapFiles
+        } + captureErrors
+        let preferred = collected.sorted {
+            sourcePreference($0) > sourcePreference($1)
+        }
+        sources = DeveloperSourceSecondPassScanner.deduplicate(preferred).sorted {
+            if $0.sessionTitle == $1.sessionTitle {
+                return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+            }
+            return $0.sessionTitle.localizedCaseInsensitiveCompare($1.sessionTitle) == .orderedAscending
+        }
+        snapshotFingerprint = nil
+        isScanning = false
+
+        let budget = await captureBudget.snapshot()
+        let retained = ByteCountFormatter.string(
+            fromByteCount: Int64(budget.retainedBytes),
+            countStyle: .file
+        )
+        let maximum = ByteCountFormatter.string(
+            fromByteCount: Int64(budget.maximumBytes),
+            countStyle: .file
+        )
+        let omitted = budget.omittedTextCount == 0
+            ? "No source bodies were omitted by the memory budget."
+            : "\(budget.omittedTextCount) source bod\(budget.omittedTextCount == 1 ? "y was" : "ies were") retained as metadata only."
+
+        status = "\(prefix) Indexed \(sources.count) sources. Retained \(retained) of \(maximum). \(omitted) \(nextInstruction)"
+        scheduleSearch(currentQuery)
+    }
+
+    private func scanErrorFile(
+        for session: DeveloperWebViewSession,
+        error: Error
+    ) -> DeveloperSourceFile {
+        DeveloperSourceFile(
+            id: "\(session.id)::scan-error",
+            sessionTitle: session.title,
+            pageURL: session.webView.url?.absoluteString ?? "",
+            displayName: "Source inventory unavailable",
+            urlString: nil,
+            kind: "Scan Error",
+            content: nil,
+            metadataNote: nil,
+            resourceByteCount: nil,
+            loadError: error.localizedDescription
+        )
     }
 
     private func sourcePreference(_ source: DeveloperSourceFile) -> Int {
