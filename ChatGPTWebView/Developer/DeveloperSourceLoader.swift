@@ -98,6 +98,22 @@ private func loadExternalDeveloperSource(
         )
     }
 
+    if isSourceMapDescriptor(descriptor, url: url) {
+        await DeveloperSourceResponseMetadataRegistry.shared.recordSourceMapReferences([], for: sourceID)
+        return DeveloperSourceFile(
+            id: sourceID,
+            sessionTitle: sessionTitle,
+            pageURL: pageURL,
+            displayName: descriptor.displayName,
+            urlString: urlString,
+            kind: descriptor.kind,
+            content: nil,
+            metadataNote: "SourceMap retrieval was deferred to Step 4B so map probing, validation, and decoding remain isolated from the normal source-loading stages.",
+            resourceByteCount: nil,
+            loadError: nil
+        )
+    }
+
     let reservation = await budget.reserve(
         upTo: DeveloperSourceCaptureBudget.maximumExternalSourceBytes
     )
@@ -178,7 +194,7 @@ private func loadExternalDeveloperSource(
             urlString: urlString,
             kind: descriptor.kind,
             content: content,
-            metadataNote: "External source text was downloaded sequentially through an 8 MB bounded response reader.",
+            metadataNote: "External source text was downloaded sequentially through a bounded response reader.",
             resourceByteCount: nil,
             loadError: nil
         )
@@ -226,6 +242,12 @@ private func loadExternalDeveloperSource(
             loadError: error.localizedDescription
         )
     }
+}
+
+private func isSourceMapDescriptor(_ descriptor: DeveloperDiscoveredSource, url: URL) -> Bool {
+    let path = url.path.lowercased()
+    if path.hasSuffix(".map") { return true }
+    return descriptor.kind.localizedCaseInsensitiveContains("source map")
 }
 
 private func budgetMetadataOnlySource(

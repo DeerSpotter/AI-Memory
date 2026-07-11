@@ -8,61 +8,119 @@ func loadBudgetedDeveloperInlineSources(
     pageURL: String,
     budget: DeveloperSourceCaptureBudget
 ) async -> [DeveloperSourceFile] {
-    var files: [DeveloperSourceFile] = []
+    let inlineDescriptors = descriptors.filter { $0.inlineSourceIndex != nil }
+    guard !inlineDescriptors.isEmpty else { return [] }
 
-    for descriptor in descriptors {
-        guard !Task.isCancelled else { return files }
+    var combinedData = Data()
+    var includedCount = 0
+    var omittedCount = 0
+    var notes: [String] = []
+
+    for descriptor in inlineDescriptors {
+        guard !Task.isCancelled else { break }
         guard let scriptIndex = descriptor.inlineSourceIndex else { continue }
 
-        files.append(
-            await loadBudgetedDeveloperInlineScript(
-                descriptor: descriptor,
-                scriptIndex: scriptIndex,
-                session: session,
-                pageURL: pageURL,
-                budget: budget
-            )
+        let result = await loadBudgetedDeveloperInlineScriptData(
+            descriptor: descriptor,
+            scriptIndex: scriptIndex,
+            session: session,
+            budget: budget
         )
+
+        switch result {
+        case .captured(let data):
+            includedCount += 1
+            let separator = "\n\n/* ===== ContextPort Inline Script \(scriptIndex + 1): \(descriptor.displayName) ===== */\n"
+            combinedData.append(Data(separator.utf8))
+            combinedData.append(data)
+        case .omitted(let reason):
+            omittedCount += 1
+            notes.append("Inline Script \(scriptIndex + 1): \(reason)")
+        }
 
         await Task.yield()
         try? await Task.sleep(nanoseconds: 10_000_000)
     }
 
-    return files
+    let metadataLines = [
+        "Combined inline scripts: \(includedCount)",
+        "Inline scripts retained as metadata only: \(omittedCount)",
+        "All captured inline script elements were reconstructed into one logical source file. Original script-element boundaries are marked by comments."
+    ] + notes
+
+    if combinedData.isEmpty {
+        return [
+            DeveloperSourceFile(
+                id: "\(session.id)::combined-inline-javascript",
+                sessionTitle: session.title,
+                pageURL: pageURL,
+                displayName: "Combined Inline JavaScript",
+                urlString: nil,
+                kind: "Inline JavaScript • Combined",
+                content: nil,
+                metadataNote: metadataLines.joined(separator: "\n"),
+                resourceByteCount: nil,
+                loadError: nil
+            )
+        ]
+    }
+
+    guard let content = String(data: combinedData, encoding: .utf8) else {
+        return [
+            DeveloperSourceFile(
+                id: "\(session.id)::combined-inline-javascript",
+                sessionTitle: session.title,
+                pageURL: pageURL,
+                displayName: "Combined Inline JavaScript",
+                urlString: nil,
+                kind: "Inline JavaScript • Combined",
+                content: nil,
+                metadataNote: metadataLines.joined(separator: "\n"),
+                resourceByteCount: combinedData.count,
+                loadError: DeveloperSourceInlineCaptureError.invalidUTF8.localizedDescription
+            )
+        ]
+    }
+
+    return [
+        DeveloperSourceFile(
+            id: "\(session.id)::combined-inline-javascript",
+            sessionTitle: session.title,
+            pageURL: pageURL,
+            displayName: "Combined Inline JavaScript",
+            urlString: nil,
+            kind: "Inline JavaScript • Combined",
+            content: content,
+            metadataNote: metadataLines.joined(separator: "\n"),
+            resourceByteCount: nil,
+            loadError: nil
+        )
+    ]
 }
 
-private func loadBudgetedDeveloperInlineScript(
+private enum DeveloperInlineScriptDataResult {
+    case captured(Data)
+    case omitted(String)
+}
+
+private func loadBudgetedDeveloperInlineScriptData(
     descriptor: DeveloperDiscoveredSource,
     scriptIndex: Int,
     session: DeveloperWebViewSession,
-    pageURL: String,
     budget: DeveloperSourceCaptureBudget
-) async -> DeveloperSourceFile {
-    let sourceID = "\(session.id)::\(descriptor.key)"
+) async -> DeveloperInlineScriptDataResult {
     let maximumBytes = DeveloperSourceCaptureBudget.maximumInlineSourceBytes
     let reportedCharacterCount = descriptor.inlineSourceCharacterCount ?? 0
 
     guard reportedCharacterCount <= maximumBytes else {
         await budget.recordOmission()
-        return inlineMetadataOnlySource(
-            sourceID: sourceID,
-            descriptor: descriptor,
-            session: session,
-            pageURL: pageURL,
-            note: "Inline script text was not retained because the page reported \(reportedCharacterCount) UTF-16 characters, above the 2 MB live-WebView per-script capture limit."
-        )
+        return .omitted("The page reported \(reportedCharacterCount) UTF-16 characters, above the per-script capture limit.")
     }
 
     let reservation = await budget.reserve(upTo: maximumBytes)
     guard reservation > 0 else {
         await budget.recordOmission()
-        return inlineMetadataOnlySource(
-            sourceID: sourceID,
-            descriptor: descriptor,
-            session: session,
-            pageURL: pageURL,
-            note: "Inline script text was not retained because the 32 MB Developer Sources refresh budget was already exhausted."
-        )
+        return .omitted("The shared Developer Sources retention budget was already exhausted.")
     }
 
     do {
@@ -84,13 +142,7 @@ private func loadBudgetedDeveloperInlineScript(
         }
         guard characterCount <= maximumBytes else {
             await budget.release(reservation: reservation, countAsOmission: true)
-            return inlineMetadataOnlySource(
-                sourceID: sourceID,
-                descriptor: descriptor,
-                session: session,
-                pageURL: pageURL,
-                note: "Inline script text was not retained because the live page contains \(characterCount) UTF-16 characters, above the 2 MB live-WebView per-script capture limit."
-            )
+            return .omitted("The live script contains \(characterCount) UTF-16 characters, above the per-script capture limit.")
         }
 
         var data = Data()
@@ -116,84 +168,23 @@ private func loadBudgetedDeveloperInlineScript(
             let chunkData = Data(chunk.utf8)
             guard data.count + chunkData.count <= reservation else {
                 await budget.release(reservation: reservation, countAsOmission: true)
-                return inlineMetadataOnlySource(
-                    sourceID: sourceID,
-                    descriptor: descriptor,
-                    session: session,
-                    pageURL: pageURL,
-                    note: "Inline script text was not retained because its UTF-8 representation exceeded the available 2 MB per-script or scan-wide capture budget."
-                )
+                return .omitted("Its UTF-8 representation exceeded the available per-script or shared retention budget.")
             }
 
             data.append(chunkData)
             start = end
-
             await Task.yield()
-            try? await Task.sleep(nanoseconds: 5_000_000)
-        }
-
-        guard let content = String(data: data, encoding: .utf8) else {
-            throw DeveloperSourceInlineCaptureError.invalidUTF8
         }
 
         await budget.commit(reservation: reservation, actualBytes: data.count)
-        return DeveloperSourceFile(
-            id: sourceID,
-            sessionTitle: session.title,
-            pageURL: pageURL,
-            displayName: descriptor.displayName,
-            urlString: descriptor.url,
-            kind: descriptor.kind,
-            content: content,
-            metadataNote: "Inline script text was read from the live WebView in 64 KB character chunks under the shared 32 MB capture budget.",
-            resourceByteCount: nil,
-            loadError: nil
-        )
+        return .captured(data)
     } catch is CancellationError {
         await budget.release(reservation: reservation)
-        return inlineMetadataOnlySource(
-            sourceID: sourceID,
-            descriptor: descriptor,
-            session: session,
-            pageURL: pageURL,
-            note: "Inline script capture was cancelled before the complete source body was retained."
-        )
+        return .omitted("Capture was cancelled before the complete script was reconstructed.")
     } catch {
         await budget.release(reservation: reservation)
-        return DeveloperSourceFile(
-            id: sourceID,
-            sessionTitle: session.title,
-            pageURL: pageURL,
-            displayName: descriptor.displayName,
-            urlString: descriptor.url,
-            kind: descriptor.kind,
-            content: nil,
-            metadataNote: nil,
-            resourceByteCount: nil,
-            loadError: error.localizedDescription
-        )
+        return .omitted(error.localizedDescription)
     }
-}
-
-private func inlineMetadataOnlySource(
-    sourceID: String,
-    descriptor: DeveloperDiscoveredSource,
-    session: DeveloperWebViewSession,
-    pageURL: String,
-    note: String
-) -> DeveloperSourceFile {
-    DeveloperSourceFile(
-        id: sourceID,
-        sessionTitle: session.title,
-        pageURL: pageURL,
-        displayName: descriptor.displayName,
-        urlString: descriptor.url,
-        kind: descriptor.kind,
-        content: nil,
-        metadataNote: note,
-        resourceByteCount: nil,
-        loadError: nil
-    )
 }
 
 private enum DeveloperSourceInlineCaptureError: LocalizedError {
@@ -203,9 +194,9 @@ private enum DeveloperSourceInlineCaptureError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .scriptUnavailable:
-            return "The inline script changed or disappeared before ContextPort could finish its bounded read."
+            return "The inline script changed or disappeared before ContextPort could reconstruct it."
         case .invalidUTF8:
-            return "The inline script could not be retained as UTF-8 text."
+            return "The combined inline JavaScript could not be retained as UTF-8 text."
         }
     }
 }
