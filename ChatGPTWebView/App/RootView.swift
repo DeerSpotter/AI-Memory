@@ -27,7 +27,7 @@ struct RootView: View {
                     .accessibilityHidden(selectedTab != .memory)
                     .zIndex(selectedTab == .memory ? 1 : 0)
 
-                DeveloperSourcesView(
+                DeveloperToolsView(
                     isActive: developerModeEnabled && selectedTab == .developer
                 )
                 .opacity(developerModeEnabled && selectedTab == .developer ? 1 : 0)
@@ -454,7 +454,7 @@ private struct SettingsView: View {
                 } header: {
                     Text("Developer")
                 } footer: {
-                    Text("Adds a Dev tab with an on-demand Sources inspector. No source indexing runs while Developer Mode is off. Once indexed, loaded source text stays available across tabs and is cleared only when ContextPort closes.")
+                    Text("Adds a Dev tab with separate Static source capture and Live WKWebView interception. Static indexing remains manual. Live capture runs only after Start Live Capture is pressed and continues while you return to an AI tab until explicitly stopped.")
                 }
 
                 Section("Updates") {
