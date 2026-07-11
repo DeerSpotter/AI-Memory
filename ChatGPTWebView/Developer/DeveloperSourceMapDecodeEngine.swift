@@ -61,7 +61,7 @@ enum DeveloperSourceMapDecodeEngine {
                 let reservation = await budget.reserve(upTo: data.count)
                 if reservation == data.count {
                     await budget.commit(reservation: reservation, actualBytes: data.count)
-                    mapFiles.append(mapFile(validated, sessionID, sessionTitle, paeURL, text, metadata, nil))
+                    mapFiles.append(mapFile(validated, sessionID, sessionTitle, pageURL, text, metadata, nil))
                 } else {
                     await budget.release(reservation: reservation, countAsOmission: true)
                     mapFiles.append(mapFile(
