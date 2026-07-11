@@ -18,21 +18,66 @@ jobs:
           ref: agent/chatgpt-map-performance
           fetch-depth: 0
 
-      - name: Run patch and retain exact diagnostics
+      - name: Run patch and retain validation diagnostics
         shell: bash
         run: |
           set +e
+          : > /tmp/contextport-hotfix.log
           base64 --decode .github/contextport_hotfix_patch.py.gz.b64 | gunzip > /tmp/contextport_hotfix_patch.py
-          python3 /tmp/contextport_hotfix_patch.py > /tmp/contextport-hotfix.log 2>&1
-          status=$?
+          python3 /tmp/contextport_hotfix_patch.py >> /tmp/contextport-hotfix.log 2>&1
+          patch_status=$?
+          echo "patch_exit_status=$patch_status" >> /tmp/contextport-hotfix.log
+
+          files=(
+            ChatGPTWebView/Developer/DeveloperSourcesModel.swift
+            ChatGPTWebView/Developer/DeveloperSourceBrowserInventory.swift
+            ChatGPTWebView/Developer/DeveloperSourceMapRecovery.swift
+            ChatGPTWebView/Developer/DeveloperSourceMemoryArchive.swift
+            ChatGPTWebView/Web/ChatGPTWebViewChatPerformance.swift
+            ChatGPTWebView/Web/ChatGPTWebViewLatestExchange.swift
+            ChatGPTWebView/Web/ChatGPTConversationMapCapture.swift
+            ChatGPTWebView/Web/ChatGPTConversationExporter.swift
+          )
+          for file in "${files[@]}"; do
+            echo >> /tmp/contextport-hotfix.log
+            echo "=== swift parse: $file ===" >> /tmp/contextport-hotfix.log
+            xcrun swiftc -frontend -parse "$file" >> /tmp/contextport-hotfix.log 2>&1
+            echo "swift_parse_exit_status=$?" >> /tmp/contextport-hotfix.log
+          done
+
+          echo >> /tmp/contextport-hotfix.log
+          echo "=== extract map capture script ===" >> /tmp/contextport-hotfix.log
+          python3 - <<'PY' >> /tmp/contextport-hotfix.log 2>&1
+          import pathlib, re
+          source = pathlib.Path('ChatGPTWebView/Web/ChatGPTConversationMapCapture.swift').read_text()
+          match = re.search(r'private static let captureScript = #"""(.*?)"""#', source, re.S)
+          print('capture_script_found=', bool(match))
+          if match:
+              body = match.group(1)
+              pathlib.Path('/tmp/chatgpt-map-capture.js').write_text(
+                  'async function capture(conversationID) {\n' + body + '\n}\nmodule.exports = capture;\n'
+              )
+          PY
+          extract_status=$?
+          echo "extract_exit_status=$extract_status" >> /tmp/contextport-hotfix.log
+          if [ -f /tmp/chatgpt-map-capture.js ]; then
+            node --check /tmp/chatgpt-map-capture.js >> /tmp/contextport-hotfix.log 2>&1
+            echo "node_check_exit_status=$?" >> /tmp/contextport-hotfix.log
+          fi
+
+          echo >> /tmp/contextport-hotfix.log
+          echo "=== diff check ===" >> /tmp/contextport-hotfix.log
+          git diff --check >> /tmp/contextport-hotfix.log 2>&1
+          echo "diff_check_exit_status=$?" >> /tmp/contextport-hotfix.log
+
+          echo >> /tmp/contextport-hotfix.log
+          echo "=== changed paths ===" >> /tmp/contextport-hotfix.log
+          git status --short >> /tmp/contextport-hotfix.log 2>&1
+
           set -e
-          {
-            echo "patch_exit_status=$status"
-            echo
-            cat /tmp/contextport-hotfix.log
-          } > .github/hotfix-diagnostic.txt
+          cp /tmp/contextport-hotfix.log .github/hotfix-diagnostic.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add .github/hotfix-diagnostic.txt
-          git commit -m "Record ChatGPT hotfix patch diagnostic"
+          git commit -m "Record ChatGPT hotfix validation diagnostic"
           git push origin HEAD:agent/chatgpt-map-performance
