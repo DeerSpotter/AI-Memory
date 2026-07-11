@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct MemoryTestView: View {
     @EnvironmentObject private var appModel: AppModel
+    @ObservedObject private var memoryWriteActivity = LocalMemoryWriteActivity.shared
 
     @State private var selectedSection = MemorySection.all
     @State private var isSelecting = false
@@ -26,6 +27,29 @@ struct MemoryTestView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .padding(.vertical, 8)
+
+                if memoryWriteActivity.isWriting {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .tint(.red)
+
+                        Text("Please wait. Something is still being saved to Memory.")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(.red)
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(
+                        Color.red.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Please wait. Something is still being saved to Memory.")
+                }
 
                 List {
                     if displayedEntries.isEmpty {
@@ -64,7 +88,11 @@ struct MemoryTestView: View {
                             Image(systemName: "archivebox")
                         }
                     }
-                    .disabled(isExportingMemories || isImporting)
+                    .disabled(
+                        isExportingMemories
+                        || isImporting
+                        || memoryWriteActivity.isWriting
+                    )
                     .accessibilityLabel("Memory import and export")
 
                     Button {
@@ -80,7 +108,13 @@ struct MemoryTestView: View {
                             selectedEntryIDs.removeAll()
                         }
                     }
-                    .disabled(displayedEntries.isEmpty && !isSelecting)
+                    .disabled(
+                        !isSelecting
+                        && (
+                            displayedEntries.isEmpty
+                            || memoryWriteActivity.isWriting
+                        )
+                    )
                 }
             }
             .safeAreaInset(edge: .bottom) {
