@@ -61,6 +61,7 @@ jobs:
           rm -f .github/workflows/finalize-chatgpt-map-performance-hotfix.yml
           rm -f .github/workflows/force-finalize-chatgpt-hotfix.yml
           rm -f .github/workflows/force-finalize-chatgpt-hotfix-ubuntu.yml
+          rm -f .github/workflows/diagnose-publish-chatgpt-source.yml
           rm -f .github/workflows/publish-chatgpt-hotfix-source-branch.yml
           git diff --check
           python3 - <<'PY'
@@ -77,7 +78,15 @@ jobs:
               'ChatGPTWebView/Web/ChatGPTWebViewLatestExchange.swift',
               'project.yml',
           }
-          actual = set(subprocess.check_output(['git','diff','--name-only','ae271328f1eff79262d4b8095e459239031f0da9'], text=True).splitlines())
+          tracked = set(subprocess.check_output(
+              ['git', 'diff', '--name-only', 'ae271328f1eff79262d4b8095e459239031f0da9'],
+              text=True
+          ).splitlines())
+          untracked = set(subprocess.check_output(
+              ['git', 'ls-files', '--others', '--exclude-standard'],
+              text=True
+          ).splitlines())
+          actual = tracked | untracked
           if actual != expected:
               raise SystemExit(f'Unexpected source-only diff: {sorted(actual)}')
           project = Path('project.yml').read_text()
