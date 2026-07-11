@@ -79,7 +79,9 @@ enum DeveloperSourceCaptureStage: Int, Sendable {
     case firstPass = 1
     case secondPass = 2
     case nestedDependencies = 3
-    case sourceMaps = 4
+    case sourceMapDiscovery = 4
+    case sourceMapValidation = 5
+    case sourceMaps = 6
 }
 
 @MainActor
@@ -98,6 +100,8 @@ final class DeveloperSourcesModel: ObservableObject {
         var firstPassFiles: [DeveloperSourceFile]
         var secondPassFiles: [DeveloperSourceFile] = []
         var nestedPassFiles: [DeveloperSourceFile] = []
+        var sourceMapCandidates: [DeveloperSourceMapCandidate] = []
+        var validatedSourceMaps: [DeveloperValidatedSourceMap] = []
         var sourceMapFiles: [DeveloperSourceFile] = []
     }
 
@@ -125,8 +129,16 @@ final class DeveloperSourcesModel: ObservableObject {
         completedStage == .secondPass && !isScanning
     }
 
-    var canRunSourceMaps: Bool {
+    var canRunSourceMapDiscovery: Bool {
         completedStage == .nestedDependencies && !isScanning
+    }
+
+    var canRunSourceMapValidation: Bool {
+        completedStage == .sourceMapDiscovery && !isScanning
+    }
+
+    var canRunSourceMapDecode: Bool {
+        completedStage == .sourceMapValidation && !isScanning
     }
 
     func archiveSnapshot() -> [DeveloperSourceArchiveItem] {
@@ -162,6 +174,13 @@ final class DeveloperSourcesModel: ObservableObject {
         scanTask?.cancel()
         searchTask?.cancel()
 
+        for state in captureStates {
+            DeveloperSourceMapStagedRecovery.cleanup(
+                candidates: state.sourceMapCandidates,
+                validatedMaps: state.validatedSourceMaps
+            )
+        }
+
         sources.removeAll(keepingCapacity: false)
         results.removeAll(keepingCapacity: false)
         captureStates.removeAll(keepingCapacity: false)
@@ -177,7 +196,7 @@ final class DeveloperSourcesModel: ObservableObject {
             return
         }
 
-        beginStage("Step 1 of 4: capturing loaded scripts, styles, runtime resources, and bounded inline scripts...")
+        beginStage("Step 1: capturing loaded scripts, styles, runtime resources, and bounded inline scripts...")
 
         scanTask = Task { [weak self] in
             guard let self else { return }
@@ -213,7 +232,7 @@ final class DeveloperSourcesModel: ObservableObject {
                         return
                     }
 
-                    self.status = "Step 1 of 4: reading inline scripts from \(session.title) in bounded chunks..."
+                    self.status = "Step 1: reading inline scripts from \(session.title) in bounded chunks..."
                     let inlineFiles = await loadBudgetedDeveloperInlineSources(
                         from: page.sources,
                         session: session,
@@ -253,7 +272,7 @@ final class DeveloperSourcesModel: ObservableObject {
 
     func runSecondPass() {
         guard canRunSecondPass else { return }
-        beginStage("Step 2 of 4: reconciling late runtime resources and explicit bundler references...")
+        beginStage("Step 2: reconciling late runtime resources and explicit bundler references...")
 
         scanTask = Task { [weak self] in
             guard let self else { return }
@@ -300,7 +319,7 @@ final class DeveloperSourcesModel: ObservableObject {
 
     func runNestedPass() {
         guard canRunNestedPass else { return }
-        beginStage("Step 3 of 4: scanning resolved bundler chunks for one bounded dependency depth...")
+        beginStage("Step 3: scanning resolved bundler chunks for one bounded dependency depth...")
 
         scanTask = Task { [weak self] in
             guard let self else { return }
@@ -340,18 +359,19 @@ final class DeveloperSourcesModel: ObservableObject {
             self.completedStage = .nestedDependencies
             await self.finishStage(
                 prefix: "Step 3 complete.",
-                nextInstruction: "Review the nested dependencies, then run Step 4 only when SourceMap recovery is needed."
+                nextInstruction: "Review the nested dependencies, then run Step 4A to discover SourceMaps."
             )
         }
     }
 
-    func runSourceMapPass() {
-        guard canRunSourceMaps else { return }
-        beginStage("Step 4 of 4: recovering validated SourceMaps sequentially under the remaining capture budget...")
+    func runSourceMapDiscovery() {
+        guard canRunSourceMapDiscovery else { return }
+        beginStage("Step 4A: discovering SourceMap headers, directives, fallback URLs, and captured map resources...")
 
         scanTask = Task { [weak self] in
             guard let self else { return }
             var updatedStates: [SessionCaptureState] = []
+            var candidateCount = 0
 
             for var state in self.captureStates {
                 guard !Task.isCancelled else {
@@ -360,16 +380,108 @@ final class DeveloperSourcesModel: ObservableObject {
                 }
 
                 let inputs = state.firstPassFiles + state.secondPassFiles + state.nestedPassFiles
-                let recovered = await DeveloperSourceSafeMapRecovery.recover(
-                    from: inputs,
+                state.sourceMapCandidates = await DeveloperSourceMapStagedRecovery.discover(from: inputs)
+                state.validatedSourceMaps = []
+                state.sourceMapFiles = DeveloperSourceMapStagedRecovery.candidateFiles(
+                    state.sourceMapCandidates,
+                    sessionID: state.session.id,
+                    sessionTitle: state.session.title,
+                    pageURL: state.page.pageURL
+                )
+                candidateCount += state.sourceMapCandidates.count
+                updatedStates.append(state)
+                await Task.yield()
+            }
+
+            guard !Task.isCancelled else {
+                self.isScanning = false
+                return
+            }
+
+            self.captureStates = updatedStates
+            self.completedStage = .sourceMapDiscovery
+            await self.finishStage(
+                prefix: "Step 4A complete. Discovered \(candidateCount) SourceMap candidate\(candidateCount == 1 ? "" : "s").",
+                nextInstruction: "Review the candidates, then run Step 4B to validate them one at a time."
+            )
+        }
+    }
+
+    func runSourceMapValidation() {
+        guard canRunSourceMapValidation else { return }
+        beginStage("Step 4B: downloading and validating one SourceMap at a time, with validated JSON cached to temporary files...")
+
+        scanTask = Task { [weak self] in
+            guard let self else { return }
+            var updatedStates: [SessionCaptureState] = []
+            var validatedCount = 0
+
+            for var state in self.captureStates {
+                guard !Task.isCancelled else {
+                    self.isScanning = false
+                    return
+                }
+
+                let inputs = state.firstPassFiles + state.secondPassFiles + state.nestedPassFiles
+                state.validatedSourceMaps = await DeveloperSourceMapStagedRecovery.validate(
+                    candidates: state.sourceMapCandidates,
+                    existingFiles: inputs,
+                    sessionID: state.session.id,
+                    pageURL: state.page.pageURL,
+                    userAgent: state.session.webView.customUserAgent,
+                    cookieHeader: state.cookieHeader
+                )
+                state.sourceMapFiles = DeveloperSourceMapStagedRecovery.validationFiles(
+                    state.validatedSourceMaps,
+                    sessionID: state.session.id,
+                    sessionTitle: state.session.title,
+                    pageURL: state.page.pageURL
+                )
+                validatedCount += state.validatedSourceMaps.count
+                updatedStates.append(state)
+                await Task.yield()
+            }
+
+            guard !Task.isCancelled else {
+                self.isScanning = false
+                return
+            }
+
+            self.captureStates = updatedStates
+            self.completedStage = .sourceMapValidation
+            await self.finishStage(
+                prefix: "Step 4B complete. Validated \(validatedCount) SourceMap\(validatedCount == 1 ? "" : "s").",
+                nextInstruction: "Review the validated maps, then run Step 4C to decode embedded original sources."
+            )
+        }
+    }
+
+    func runSourceMapDecode() {
+        guard canRunSourceMapDecode else { return }
+        beginStage("Step 4C: decoding sourcesContent from one validated SourceMap at a time under the remaining capture budget...")
+
+        scanTask = Task { [weak self] in
+            guard let self else { return }
+            var updatedStates: [SessionCaptureState] = []
+            var mapCount = 0
+            var originalCount = 0
+
+            for var state in self.captureStates {
+                guard !Task.isCancelled else {
+                    self.isScanning = false
+                    return
+                }
+
+                let recovered = await DeveloperSourceMapStagedRecovery.decode(
+                    validatedMaps: state.validatedSourceMaps,
                     sessionID: state.session.id,
                     sessionTitle: state.session.title,
                     pageURL: state.page.pageURL,
-                    userAgent: state.session.webView.customUserAgent,
-                    cookieHeader: state.cookieHeader,
                     budget: self.captureBudget
                 )
                 state.sourceMapFiles = recovered.mapFiles + recovered.originalSourceFiles
+                mapCount += recovered.mapFiles.count
+                originalCount += recovered.originalSourceFiles.count
                 updatedStates.append(state)
                 await Task.yield()
             }
@@ -382,7 +494,7 @@ final class DeveloperSourcesModel: ObservableObject {
             self.captureStates = updatedStates
             self.completedStage = .sourceMaps
             await self.finishStage(
-                prefix: "Step 4 complete.",
+                prefix: "Step 4C complete. Retained \(mapCount) validated SourceMap\(mapCount == 1 ? "" : "s") and \(originalCount) decoded original source\(originalCount == 1 ? "" : "s").",
                 nextInstruction: "The manual source capture is complete. Save the current snapshot to Memory when ready."
             )
         }
@@ -485,6 +597,7 @@ final class DeveloperSourcesModel: ObservableObject {
     private func sourcePreference(_ source: DeveloperSourceFile) -> Int {
         if source.kind == "Source Map • Validated v3" { return 300 }
         if source.kind == "Original Source • Embedded SourceMap" { return 250 }
+        if source.kind == "Source Map Candidate" { return 200 }
         if source.loadError == nil { return 100 }
         return 0
     }
