@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import WebKit
 
-struct DeveloperLiveNetworkEvent: Identifiable, Sendable {
+struct DeveloperLiveNetworkEvent: Identifiable, Codable, Sendable {
     let id: String
     let sessionID: String
     let sessionTitle: String
@@ -46,6 +46,7 @@ final class DeveloperLiveInterceptorModel: ObservableObject {
     @Published private(set) var isCapturing = false
     @Published private(set) var status = "Live capture is stopped."
     @Published private(set) var droppedEventCount = 0
+    @Published private(set) var snapshotGeneration = 0
 
     private struct BrowserDrainEnvelope: Decodable {
         let events: [BrowserEvent]
@@ -119,8 +120,10 @@ final class DeveloperLiveInterceptorModel: ObservableObject {
     }
 
     func clear() {
+        guard !events.isEmpty || droppedEventCount > 0 else { return }
         events.removeAll(keepingCapacity: true)
         droppedEventCount = 0
+        snapshotGeneration &+= 1
         status = isCapturing ? "Live log cleared. Still listening..." : "Live log cleared."
     }
 
@@ -145,7 +148,12 @@ final class DeveloperLiveInterceptorModel: ObservableObject {
                       let data = json.data(using: .utf8) else { continue }
 
                 let envelope = try JSONDecoder().decode(BrowserDrainEnvelope.self, from: data)
-                droppedEventCount += envelope.dropped ?? 0
+                let browserDropped = envelope.dropped ?? 0
+                if browserDropped > 0 {
+                    droppedEventCount += browserDropped
+                    snapshotGeneration &+= 1
+                }
+
                 let pageURL = session.webView.url?.absoluteString ?? ""
                 let mapped = envelope.events.map { item in
                     DeveloperLiveNetworkEvent(
@@ -189,5 +197,6 @@ final class DeveloperLiveInterceptorModel: ObservableObject {
             events.removeFirst(overflow)
             droppedEventCount += overflow
         }
+        snapshotGeneration &+= 1
     }
 }

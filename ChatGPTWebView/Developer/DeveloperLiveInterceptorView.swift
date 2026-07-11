@@ -5,19 +5,22 @@ import WebKit
 struct DeveloperLiveInterceptorView: View {
     let isActive: Bool
 
+    @EnvironmentObject private var appModel: AppModel
     @EnvironmentObject private var profileSessionPool: ChatGPTProfileSessionPool
     @StateObject private var model = DeveloperLiveInterceptorModel()
     @State private var searchText = ""
     @State private var selectedKind = DeveloperLiveEventKindFilter.all
     @State private var selectedSession = DeveloperLiveSessionFilter.all
     @State private var captureBodyPreviews = false
+    @State private var isSavingToMemory = false
+    @State private var lastSavedSnapshotGeneration: Int?
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     HStack(spacing: 10) {
-                        if model.isCapturing {
+                        if model.isCapturing || isSavingToMemory {
                             ProgressView()
                         }
 
@@ -49,20 +52,39 @@ struct DeveloperLiveInterceptorView: View {
                             systemImage: model.isCapturing ? "stop.circle.fill" : "record.circle"
                         )
                     }
+                    .disabled(isSavingToMemory)
 
                     Toggle("Bounded Body Previews", isOn: $captureBodyPreviews)
-                        .disabled(model.isCapturing)
+                        .disabled(model.isCapturing || isSavingToMemory)
+
+                    Button {
+                        saveEverythingDiscoveredToMemory()
+                    } label: {
+                        Label(
+                            isCurrentSnapshotSaved
+                                ? "Saved Everything to Memory"
+                                : "Save Everything Discovered to Memory",
+                            systemImage: isCurrentSnapshotSaved
+                                ? "checkmark.circle.fill"
+                                : "archivebox.fill"
+                        )
+                    }
+                    .disabled(
+                        model.events.isEmpty
+                        || isSavingToMemory
+                        || isCurrentSnapshotSaved
+                    )
 
                     Button(role: .destructive) {
                         model.clear()
                     } label: {
                         Label("Clear Live Log", systemImage: "trash")
                     }
-                    .disabled(model.events.isEmpty)
+                    .disabled(model.events.isEmpty || isSavingToMemory)
                 } header: {
                     Text("Live Interceptor")
                 } footer: {
-                    Text("Live capture installs a bounded JavaScript bridge in each currently loaded provider WKWebView. It watches fetch, XMLHttpRequest, WebSocket, EventSource, sendBeacon, navigation, and browser resource timing. Cookies, authorization headers, and complete streaming bodies are never collected. Body previews are off by default and remain capped when enabled. Capture continues while you switch back to the AI tab until you press Stop.")
+                    Text("Live capture installs a bounded JavaScript bridge in each currently loaded provider WKWebView. It watches fetch, XMLHttpRequest, WebSocket, EventSource, sendBeacon, navigation, and browser resource timing. Cookies, authorization headers, and complete streaming bodies are never collected. Body previews are off by default and remain capped when enabled. Capture continues while you switch back to the AI tab until you press Stop. Save Everything archives the complete retained log at the moment the button is pressed, regardless of the current search or filters.")
                 }
 
                 Section("Filters") {
@@ -109,6 +131,14 @@ struct DeveloperLiveInterceptorView: View {
         }
     }
 
+    private var isCurrentSnapshotSaved: Bool {
+        guard !model.events.isEmpty,
+              let lastSavedSnapshotGeneration else {
+            return false
+        }
+        return lastSavedSnapshotGeneration == model.snapshotGeneration
+    }
+
     private var visibleEvents: [DeveloperLiveNetworkEvent] {
         let normalizedSearch = searchText
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -130,6 +160,35 @@ struct DeveloperLiveInterceptorView: View {
             return "No live events captured. Press Start Live Capture, then return to an AI tab."
         }
         return "No captured event matches the current filters."
+    }
+
+    private func saveEverythingDiscoveredToMemory() {
+        guard !isSavingToMemory, !model.events.isEmpty else { return }
+
+        let snapshot = model.events
+        let droppedEventCount = model.droppedEventCount
+        let snapshotGeneration = model.snapshotGeneration
+        isSavingToMemory = true
+        appModel.statusMessage = "Packaging all \(snapshot.count) retained live events into one Memory ZIP..."
+
+        Task { @MainActor in
+            defer { isSavingToMemory = false }
+
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try DeveloperLiveInterceptorMemoryArchiveBuilder().saveToMemory(
+                        events: snapshot,
+                        droppedEventCount: droppedEventCount
+                    )
+                }.value
+                lastSavedSnapshotGeneration = snapshotGeneration
+                appModel.reloadLocalMemory()
+                appModel.statusMessage = result.message
+            } catch {
+                appModel.reloadLocalMemory()
+                appModel.statusMessage = "Live Interceptor ZIP save failed: \(error.localizedDescription)"
+            }
+        }
     }
 }
 
