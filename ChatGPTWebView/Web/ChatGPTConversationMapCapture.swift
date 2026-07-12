@@ -70,7 +70,7 @@ enum ChatGPTConversationMapCapture {
       const pageURL = String(location.href || 'https://chatgpt.com/');
       const expectedCanaries = ['chatgpt-active-branch', 'chatgpt-provider-transport'];
       const diagnostics = (strategy, matchedCanaries) => ({
-        strategyVersion: 2,
+        strategyVersion: 3,
         strategy,
         expectedCanaries,
         matchedCanaries,
@@ -94,6 +94,7 @@ enum ChatGPTConversationMapCapture {
         if (typeof part === 'string') return part;
         if (!part || typeof part !== 'object') return '';
         if (typeof part.text === 'string') return part.text;
+        if (typeof part.content === 'string') return part.content;
         if (Array.isArray(part.parts)) return part.parts.map(renderPart).filter(Boolean).join('\n');
         const type = String(part.content_type || '').toLowerCase();
         if (type.includes('image')) return '[image]';
@@ -117,9 +118,10 @@ enum ChatGPTConversationMapCapture {
         }
         const contentType = String(message.content?.content_type || '').toLowerCase();
         const parts = Array.isArray(message.content?.parts) ? message.content.parts : [];
+        const renderedParts = parts.map(renderPart).filter(Boolean);
         let content = contentType === 'text'
-          ? parts.filter(part => typeof part === 'string').join('')
-          : parts.map(renderPart).filter(Boolean).join('\n\n');
+          ? renderedParts.join('')
+          : renderedParts.join('\n\n');
         if (!content && typeof message.content?.text === 'string') content = message.content.text;
         content = normalize(content);
         if (content.length < 5 || content.length >= 300000) return null;
@@ -147,15 +149,17 @@ enum ChatGPTConversationMapCapture {
         error,
         diagnostics: diagnostics(strategy, matchedCanaries)
       });
-      const fetchJSON = async path => {
+      const fetchJSONURL = async (url, authorization = null) => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
         try {
-          const response = await fetch(`${location.origin}/backend-api${path}`, {
+          const headers = { Accept: 'application/json' };
+          if (authorization) headers.Authorization = `Bearer ${authorization}`;
+          const response = await fetch(url, {
             method: 'GET',
             credentials: 'include',
             cache: 'no-store',
-            headers: { Accept: 'application/json' },
+            headers,
             signal: controller.signal
           });
           if (!response.ok) return null;
@@ -170,6 +174,14 @@ enum ChatGPTConversationMapCapture {
           clearTimeout(timeout);
         }
       };
+      const session = await fetchJSONURL(`${location.origin}/api/auth/session`);
+      const accessToken = typeof session?.accessToken === 'string'
+        ? session.accessToken.trim()
+        : '';
+      const fetchJSON = path => fetchJSONURL(
+        `${location.origin}/backend-api${path}`,
+        accessToken || null
+      );
 
       const encodedConversationID = encodeURIComponent(String(conversationID || ''));
       if (!encodedConversationID) {
