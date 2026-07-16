@@ -62,7 +62,7 @@ static const void *CPChatGPTScrollScriptInstalledKey = &CPChatGPTScrollScriptIns
     [self cp_prepareNativeScrollViewForChatGPT];
 
     __weak WKWebView *weakWebView = self;
-    NSArray<NSNumber *> *delays = @[@0.25, @0.75, @2.0, @5.0, @10.0, @16.0];
+    NSArray<NSNumber *> *delays = @[@0.25, @0.75, @1.5, @3.0, @5.0, @8.0, @12.0];
     for (NSNumber *delay in delays) {
         dispatch_after(
             dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)),
@@ -91,15 +91,28 @@ static const void *CPChatGPTScrollScriptInstalledKey = &CPChatGPTScrollScriptIns
             "element.removeAttribute('data-contextport-performance-message');"
           "});"
 
-          "const repair = () => {"
-            "const candidates = Array.from(document.querySelectorAll('main, [data-scroll-root], [class*=overflow-y-auto], [class*=overflow-y-scroll]'));"
+          "const stateKey = '__contextPortChatScrollRecoveryState';"
+          "const previous = window[stateKey];"
+          "if (previous && previous.url !== location.href && typeof previous.destroy === 'function') previous.destroy();"
+          "const state = window[stateKey] && window[stateKey].url === location.href"
+            "? window[stateKey]"
+            ": {url: location.href, userInteracted: false, bottomEstablished: false, lastHeight: 0, stablePasses: 0, observer: null, timer: null, listenersInstalled: false};"
+          "window[stateKey] = state;"
+
+          "const candidates = () => Array.from(document.querySelectorAll('main, [data-scroll-root], [class*=overflow-y-auto], [class*=overflow-y-scroll]'));"
+          "const findBest = () => {"
             "let best = null;"
             "let bestRange = 0;"
-            "for (const element of candidates) {"
+            "for (const element of candidates()) {"
               "if (!(element instanceof HTMLElement)) continue;"
               "const range = element.scrollHeight - element.clientHeight;"
               "if (range > bestRange && element.clientHeight > 200) { best = element; bestRange = range; }"
             "}"
+            "return best;"
+          "};"
+
+          "const repair = (allowPin = true) => {"
+            "const best = findBest();"
             "if (!best) return false;"
             "best.style.setProperty('overflow-y', 'auto', 'important');"
             "best.style.setProperty('overflow-x', 'hidden', 'important');"
@@ -112,13 +125,41 @@ static const void *CPChatGPTScrollScriptInstalledKey = &CPChatGPTScrollScriptIns
             "document.documentElement.style.setProperty('overscroll-behavior', 'none', 'important');"
             "document.body?.style.setProperty('overflow-x', 'hidden', 'important');"
             "document.body?.style.setProperty('overscroll-behavior', 'none', 'important');"
+
+            "const hasConversation = document.querySelector('[data-message-author-role], section[data-testid^=conversation-turn-]');"
+            "if (allowPin && hasConversation && !state.userInteracted) {"
+              "best.scrollTop = best.scrollHeight;"
+              "state.bottomEstablished = true;"
+              "const height = best.scrollHeight;"
+              "state.stablePasses = height === state.lastHeight ? state.stablePasses + 1 : 0;"
+              "state.lastHeight = height;"
+            "}"
             "return true;"
           "};"
 
-          "repair();"
-          "clearInterval(window.__contextPortChatScrollRepairTimer);"
-          "window.__contextPortChatScrollRepairTimer = setInterval(repair, 1500);"
-          "setTimeout(() => clearInterval(window.__contextPortChatScrollRepairTimer), 30000);"
+          "if (!state.listenersInstalled) {"
+            "const markInteraction = () => { state.userInteracted = true; };"
+            "document.addEventListener('touchstart', markInteraction, {passive:true, capture:true});"
+            "document.addEventListener('pointerdown', markInteraction, {passive:true, capture:true});"
+            "document.addEventListener('wheel', markInteraction, {passive:true, capture:true});"
+            "state.listenersInstalled = true;"
+          "}"
+
+          "repair(true);"
+          "if (!state.observer) {"
+            "state.observer = new MutationObserver(() => {"
+              "if (state.timer) clearTimeout(state.timer);"
+              "state.timer = setTimeout(() => repair(true), 60);"
+            "});"
+            "state.observer.observe(document.documentElement, {childList:true, subtree:true});"
+            "setTimeout(() => {"
+              "state.observer?.disconnect();"
+              "state.observer = null;"
+              "if (state.timer) clearTimeout(state.timer);"
+              "state.timer = null;"
+              "repair(false);"
+            "}, 15000);"
+          "}"
           "return true;"
         "} catch (_) { return false; }"
       "})()";
