@@ -2,7 +2,7 @@
 
 **Take your context with you.**
 
-ContextPort is an iOS app for carrying conversation context between ChatGPT, Claude, Gemini, Grok, and DeepSeek. Each provider and login profile keeps its own isolated WebView session while all providers can use the same device local Memory vault.
+ContextPort is an iOS app for carrying conversation context between ChatGPT, Claude, Gemini, Grok, and DeepSeek. Each provider and login profile keeps its own isolated WebView session while every provider can use the same device local Memory vault.
 
 ```text
 ChatGPT / Claude / Gemini / Grok / DeepSeek
@@ -18,21 +18,48 @@ Continue with the same history
 
 The AI can change. Your context does not have to.
 
-## Latest release: ContextPort 2.10.4 (Build 83)
+## Latest release: ContextPort 2.10.6 (Build 85)
 
-ContextPort 2.10.4 improves ChatGPT Work sessions and long conversations.
+ContextPort 2.10.6 is the current released source baseline.
+
+### 2.10.6: Save Image to Photos
+
+- Fixes the immediate app crash when using the system **Save Image to Photos** action.
+- Adds the required iOS add-only Photos permission description.
+- Prompts for permission the first time an image is saved.
+- Keeps the normal system WebKit image-saving path instead of introducing a custom downloader.
+- Does not change provider navigation, Memory, Developer Mode, or attachment handling.
+
+### 2.10.5: Work chat position and PowerPoint downloads
+
+- Keeps long ChatGPT Work conversations near the newest message while the initial conversation content is loading.
+- Stops automatic bottom positioning as soon as the user touches or scrolls the conversation.
+- Replaces repeated repair behavior with a bounded initial observation period.
+- Downloads `.ppt`, `.pptx`, `.pps`, and `.ppsx` attachments instead of opening them in the embedded viewer.
+- Opens the native iOS document export picker after a PowerPoint download completes.
+- Preserves the existing provider navigation and authentication delegate behavior.
+
+### 2.10.4: Long conversation and Work session reliability
 
 - Restores reliable vertical scrolling in long ChatGPT chats.
 - Prevents the entire page from dragging like one large image.
 - Locks horizontal movement to stop sideways drift and flickering.
 - Adds a recovery prompt when a ChatGPT Work session remains stuck while loading.
 - Reloads the current session without clearing login cookies or ContextPort Memory.
-- Removes the ChatGPT message windowing behavior that conflicted with the current ChatGPT layout.
-- Makes long ChatGPT conversations feel noticeably snappier and more responsive.
+- Removes ChatGPT message windowing behavior that conflicted with the current ChatGPT layout.
+- Makes long ChatGPT conversations feel noticeably faster and more responsive.
+
+### 2.10.3: Save Context and Memory naming
+
+- Restores authenticated ChatGPT conversation recovery using the current session access token and cookies.
+- Updates Claude extraction for its current standard chat renderer while remaining fail closed.
+- Adds a naming step when saving a new Memory.
+- Prefills the detected conversation title while allowing a custom project-specific Memory name.
+- Leaves revision saves attached to the existing Memory name.
 
 ## What ContextPort does
 
-ContextPort keeps a simple AI and Memory workflow:
+ContextPort provides a simple AI and Memory workflow:
 
 - Select an AI provider and login profile.
 - Continue using the provider inside its isolated WebView session.
@@ -40,6 +67,7 @@ ContextPort keeps a simple AI and Memory workflow:
 - Create a new Memory or add the conversation as a revision to an existing Memory.
 - Share one or more Memories with a new AI conversation or the conversation already open.
 - Attach prepared context files or paste compiled Markdown directly into the provider composer.
+- Save supported images to Photos and download supported PowerPoint attachments through native iOS handoff flows.
 
 ## Supported AI providers
 
@@ -71,6 +99,8 @@ Memory capabilities include:
 - Choose any existing Memory as the revision destination.
 - Preserve every revision as separate Markdown and PDF files.
 - View revision history, metadata, PDF, and Markdown.
+- Favorite important Memories.
+- Select and share multiple Memories as one compiled context bundle.
 - Export one revision, selected Memories, or the complete Memory vault.
 - Import ContextPort Memory ZIP archives and merge by stable Memory and revision identifiers.
 - Skip exact duplicate revisions while preserving divergent revision histories.
@@ -78,11 +108,11 @@ Memory capabilities include:
 
 ## Share Context
 
-A saved Memory can be shared in two ways:
+A saved Memory can be shared in two ways.
 
 ### Start with another AI
 
-Select ChatGPT, Claude, Gemini, Grok, or DeepSeek. ContextPort prepares the complete selected Memory and revision history, switches to the destination provider, and stages the context for the new conversation.
+Select ChatGPT, Claude, Gemini, Grok, or DeepSeek. ContextPort prepares the complete selected Memory and revision history, switches to the destination provider, and stages the context for a new conversation.
 
 ### Share with the current conversation
 
@@ -90,9 +120,32 @@ Select `Current Conversation` to remain in the provider and chat already open. C
 
 Large attachments are streamed into the WebView in bounded chunks rather than being converted into one large retained base64 payload. Unsupported provider file types are skipped instead of leaving the Attach Files action permanently active.
 
+## Native image and document saving
+
+ContextPort preserves system-owned iOS handoff behavior wherever practical.
+
+### Save Image to Photos
+
+- Use the provider page's normal image menu and choose **Save Image to Photos**.
+- On first use, iOS asks for permission to add images to Photos.
+- ContextPort requests add-only Photos access rather than broad photo-library read access.
+- If access is allowed, the image is saved through the system WebKit path.
+- If access is denied, iOS blocks the save without terminating ContextPort.
+
+### PowerPoint downloads
+
+ContextPort recognizes supported PowerPoint navigation responses for:
+
+- `.ppt`
+- `.pptx`
+- `.pps`
+- `.ppsx`
+
+The attachment is downloaded through `WKDownload`. When the download completes, ContextPort opens the native iOS document export picker so the file can be saved or shared instead of being trapped in the embedded viewer.
+
 ## Conversation capture integrity
 
-ContextPort uses provider aware extraction rules rather than guessing message roles by position.
+ContextPort uses provider-aware extraction rules rather than guessing message roles by position.
 
 - ChatGPT captures the active conversation branch and excludes inactive alternate responses.
 - Claude uses explicit standard chat user and assistant renderer evidence.
@@ -103,29 +156,34 @@ ContextPort uses provider aware extraction rules rather than guessing message ro
 - Unsafe provider UI drift blocks Memory creation instead of storing corrupted page content.
 - Provider drift alerts can direct the user to Developer Sources capture for diagnosis.
 
-ChatGPT saved conversation recovery can use authenticated conversation transport to recover older turns that are no longer present in the rendered DOM. Claude and DeepSeek include provider specific formatting handling so paragraphs, headings, lists, tables, code, links, and emphasis remain readable in exported Markdown.
+ChatGPT saved conversation recovery can use authenticated conversation transport to recover older turns that are no longer present in the rendered DOM. Claude and DeepSeek include provider-specific formatting handling so paragraphs, headings, lists, tables, code, links, and emphasis remain readable in exported Markdown.
 
-## Performance
+## Performance and Work chat behavior
 
-ContextPort includes several bounded performance systems:
+ContextPort includes bounded performance and recovery systems.
 
-### Chat and Work session responsiveness
+### ChatGPT and Work sessions
 
-- ChatGPT Work session load watchdog and recovery prompt.
-- Reliable vertical scrolling for current ChatGPT layouts.
-- Horizontal movement lock to prevent flicker.
-- Faster and snappier long ChatGPT conversation interaction.
+- Work conversations are guided toward the newest message during their initial load.
+- Automatic bottom positioning ends when the user touches or scrolls the conversation.
+- The initial positioning observer is bounded and does not keep restyling the page indefinitely.
+- A Work session watchdog detects a page that remains loading or noninteractive.
+- A compact recovery banner can reload the current page while preserving the session, cookies, account state, and Memory.
+- Vertical scrolling remains enabled while horizontal drift is constrained.
+- Current ChatGPT pages do not use the older message windowing path that conflicted with ChatGPT's present scroll architecture.
+
+### Optional performance controls
+
 - Latest Exchange Only mode for supported providers when the user wants only the newest user and assistant exchange visible.
 - Optional ChatGPT Mobile Fallback experiment.
-
-The older ChatGPT DOM message windowing path is disabled for current ChatGPT pages because it conflicted with the provider's present scroll architecture.
+- Provider-scoped performance settings.
 
 ### Memory bundle performance
 
 - Deterministic SHA-256 cache for compiled context bundles.
 - Reuse of unchanged Markdown, PDF, and composer context.
 - Streamed Markdown compilation in bounded chunks.
-- Page at a time PDF compilation through Core Graphics.
+- Page-at-a-time PDF compilation through Core Graphics.
 - Background Memory preparation away from the main UI actor.
 - Lazy PDF and Markdown revision previews.
 - Bounded cache pruning by working set count and total size.
@@ -138,12 +196,12 @@ Developer Mode provides two separate capture workflows.
 
 The Static workflow inventories and reconciles loaded provider source material.
 
-- Browser observed scripts, stylesheets, modules, workers, and source-like resources.
+- Browser-observed scripts, stylesheets, modules, workers, and source-like resources.
 - Combined inline JavaScript export instead of exposing internal chunk reads.
 - Bounded second-pass bundler dependency reconciliation.
 - One additional strict nested dependency pass.
 - Webpack and Rspack runtime asset resolution.
-- Explicit indexed text, metadata only binary, and load error states.
+- Explicit indexed text, metadata-only binary, and load-error states.
 - SourceMap candidate discovery, validation, and embedded original source recovery.
 - Separate Step 4A discovery, Step 4B validation, and Step 4C original source decoding.
 - Preservation of successes and failures in the final saved evidence set.
@@ -170,25 +228,29 @@ While a Live capture archive is being packaged, the Memory tab shows a red save 
 ## Feature summary
 
 - Five native AI providers.
-- Provider scoped Current User, Guest, and saved login profiles.
+- Provider-scoped Current User, Guest, and saved login profiles.
 - Independent WebView sessions and persistent browser recovery.
-- Shared device local Memory.
+- Shared device-local Memory.
 - Custom Memory naming.
 - Full Memory revision history.
+- Favorites and multi-Memory selection.
 - Markdown and PDF conversation export.
 - Context sharing to a new provider or the current conversation.
-- Large file attachment streaming.
-- Provider aware fail closed conversation validation.
+- Large-file attachment streaming.
+- Provider-aware fail-closed conversation validation.
 - Provider UI drift detection.
-- DeepSeek Save Context with block aware Markdown formatting.
-- ChatGPT active branch and older message recovery.
+- DeepSeek Save Context with block-aware Markdown formatting.
+- ChatGPT active branch and older-message recovery.
 - Memory ZIP export, selected export, revision export, and import.
 - Cached and streamed Memory bundle compilation.
+- ChatGPT Work session recovery and newest-message positioning.
+- Native PowerPoint download and document export handling.
+- System Save Image to Photos support with add-only permission.
 - Static Developer Sources capture.
 - SourceMap recovery and original source extraction.
 - Bounded Live Interceptor capture.
 - Visible Memory save progress for large Live archives.
-- Dark mode, mic input, refresh, and stop controls.
+- Dark mode, microphone input, refresh, and stop controls.
 - TrollStore, manual, and Xcode installation support.
 
 ## Multi AI session model
@@ -226,7 +288,7 @@ The IPA files attached to this repository's GitHub Releases come from successful
 
 **GitHub Actions is the build origin. GitHub Releases is the distribution location.**
 
-The primary source controlled workflow is:
+The primary source-controlled workflow is:
 
 - `.github/workflows/build-source-ios16-ipa.yml`
 - Workflow name: `Build ContextPort Source iOS 16 IPA`
@@ -234,7 +296,7 @@ The primary source controlled workflow is:
 The workflow:
 
 1. Checks out the repository source.
-2. Reports the Xcode version used by the GitHub hosted macOS runner.
+2. Reports the Xcode version used by the GitHub-hosted macOS runner.
 3. Installs XcodeGen when required.
 4. Generates `ChatGPTWebView.xcodeproj` from `project.yml`.
 5. Archives ContextPort in Release configuration for a generic iOS device.
@@ -247,7 +309,7 @@ Source merged into main
   -> GitHub Actions workflow runs
   -> ContextPort IPA build completes
   -> unsigned IPA is uploaded as an artifact
-  -> workflow produced IPA is attached to the GitHub Release
+  -> workflow-produced IPA is attached to the GitHub Release
   -> users download ContextPort from Releases
 ```
 
@@ -261,7 +323,7 @@ ContextPort can check the public GitHub `releases/latest` endpoint and compare t
 
 Update checks are best effort and never block startup. `Check for updates on start` can be disabled in Settings.
 
-## Source controlled app
+## Source-controlled app
 
 The current source layout retains the established internal paths:
 
@@ -273,7 +335,7 @@ Those names remain for build and upgrade compatibility. The installed product na
 
 ## Support development
 
-ContextPort is actively developed and maintained as an open source project.
+ContextPort is actively developed and maintained as an open-source project.
 
 [https://buymeacoffee.com/spotterdeer](https://buymeacoffee.com/spotterdeer)
 
