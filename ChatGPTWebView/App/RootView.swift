@@ -356,6 +356,8 @@ private struct SettingsView: View {
     @AppStorage("developerModeEnabled") private var developerModeEnabled = false
     @Environment(\.dismiss) private var dismiss
 
+    private let developerSupportURL = URL(string: "https://buymeacoffee.com/spotterdeer")!
+
     var body: some View {
         NavigationStack {
             Form {
@@ -459,6 +461,16 @@ private struct SettingsView: View {
 
                 Section("Updates") {
                     Toggle("Check for updates on start", isOn: $updateChecker.checkForUpdatesOnStart)
+                }
+
+                Section {
+                    Link(destination: developerSupportURL) {
+                        Label("Buy the Developer a Coffee", systemImage: "cup.and.saucer.fill")
+                    }
+                } header: {
+                    Text("Support Development")
+                } footer: {
+                    Text("Opens Buy Me a Coffee in your default browser.")
                 }
             }
             .navigationTitle("Settings")
