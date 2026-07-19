@@ -23,6 +23,7 @@ enum ChatOptimizationPreset: String, CaseIterable, Identifiable {
 struct ExperimentalChatOptimizationSettingsView: View {
     @EnvironmentObject private var chatPerformanceSettings: ChatPerformanceSettings
 
+    @AppStorage(AIProfileManager.hideLoggedInUserNameDefaultsKey) private var hideLoggedInUserName = false
     @AppStorage("ChatGPTOptimizationPreset") private var selectedPresetRaw = ChatOptimizationPreset.balanced.rawValue
 
     @AppStorage("ChatGPTRecoveryDelayScalePercent") private var recoveryDelayScalePercent = 100
@@ -80,6 +81,8 @@ struct ExperimentalChatOptimizationSettingsView: View {
 
     var body: some View {
         Group {
+            screenRecordingPrivacySection
+
             Section {
                 Picker("Preset", selection: $selectedPresetRaw) {
                     ForEach(ChatOptimizationPreset.allCases) { preset in
@@ -120,6 +123,18 @@ struct ExperimentalChatOptimizationSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This resets every access, render, recovery, scrolling, media, diagnostic, provider optimization, and mobile fallback setting. AI sign-ins, saved chats, Memory, and other app settings are not changed.")
+        }
+    }
+
+    private var screenRecordingPrivacySection: some View {
+        Section {
+            Toggle(isOn: $hideLoggedInUserName) {
+                Label("Hide Logged In User Name", systemImage: "eye.slash.fill")
+            }
+        } header: {
+            Text("Screen Recording Privacy")
+        } footer: {
+            Text("When enabled, the AI selector shows Current User instead of the detected logged-in account name. The stored name, login session, and saved profiles are not changed, and turning this off restores the normal label.")
         }
     }
 
