@@ -49,12 +49,13 @@ static const void *CPConversationScrollGuardInstalledKey = &CPConversationScroll
         "const evaluate=()=>{guard.scheduled=false;const s=state();if(!s)return;const target=s.scrollTarget;if(target&&!ownsConversation(target)){pause();return}const turn=pointTurn();const blocked=blockingSurface();if(!turn&&blocked){pause();return}if(guard.pausedByGuard&&turn&&!blocked){const resume=guard.resumeWasEnabled;guard.pausedByGuard=false;guard.resumeWasEnabled=false;if(resume){s.followLatest=true;s.followStartedAt=Date.now()}}};"
         "const schedule=()=>{if(guard.scheduled)return;guard.scheduled=true;requestAnimationFrame(evaluate)};"
         "document.addEventListener('scroll',event=>{const target=event.target===document?document.scrollingElement:event.target;if(!(target instanceof Element)||ownsConversation(target))return;if(target.matches(surfaceSelector)||target.closest(surfaceSelector))pause()},{capture:true,passive:true});"
-        "for(const type of ['wheel','touchstart','pointerdown'])document.addEventListener(type,event=>{const target=event.target instanceof Element?event.target:null;if(target&&(target.matches(surfaceSelector)||target.closest(surfaceSelector)))pause()},{capture:true,passive:true});"
+        "for(const type of ['wheel','touchstart','pointerdown'])document.addEventListener(type,event=>{const target=event.target instanceof Element?event.target:null;if(!target)return;if(target.matches(surfaceSelector)||target.closest(surfaceSelector)){pause();return}const control=target.closest('button,a,[role=button]');if(control&&!control.closest(turnSelector)){const label=String(control.getAttribute('aria-label')||control.getAttribute('title')||control.innerText||control.textContent||'');if(/settings|sidebar|menu|navigation|profile|account/i.test(label))pause()}},{capture:true,passive:true});"
         "document.addEventListener('focusin',event=>{const target=event.target instanceof Element?event.target:null;if(target&&(target.matches(surfaceSelector)||target.closest(surfaceSelector)))pause()},true);"
         "guard.observer=new MutationObserver(schedule);"
-        "guard.observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['aria-hidden','aria-modal','data-state','open','style']});"
-        "guard.timer=setInterval(evaluate,200);"
+        "const observe=()=>{const root=document.documentElement;if(!root){setTimeout(observe,0);return}guard.observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['aria-hidden','aria-modal','data-state','open','style']})};"
         "window.__contextPortConversationScrollGuard=guard;"
+        "observe();"
+        "guard.timer=setInterval(evaluate,200);"
         "evaluate();"
     "})()";
 
